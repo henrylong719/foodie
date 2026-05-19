@@ -8,19 +8,19 @@
 */
 
 @theme {
-  --color-bg: #f4f7f6;
+  --color-bg: #f8f6f0;
   --color-surface: #ffffff;
-  --color-surface-2: #eef5f3;
-  --color-surface-3: #dfe9e6;
-  --color-border: #d8e3df;
-  --color-border-strong: #b6c7c2;
-  --color-text: #102321;
-  --color-text-dim: #61716e;
-  --color-accent: #0f766e;
-  --color-accent-dim: #99d8d0;
-  --color-good: #15803d;
-  --color-warn: #b86b17;
-  --color-danger: #c2413a;
+  --color-surface-2: #f1f5ee;
+  --color-surface-3: #e4eadf;
+  --color-border: #dedbd0;
+  --color-border-strong: #c7c2b5;
+  --color-text: #20231f;
+  --color-text-dim: #686f63;
+  --color-accent: #217a4a;
+  --color-accent-dim: #a9d8bd;
+  --color-good: #1f7a3d;
+  --color-warn: #b46b19;
+  --color-danger: #b4443d;
 
   --font-display: "Fraunces", Georgia, serif;
   --font-body: "Geist", system-ui, sans-serif;
@@ -42,9 +42,9 @@ body {
 
 body {
   background-image:
-    linear-gradient(rgba(16, 35, 33, 0.035) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(16, 35, 33, 0.028) 1px, transparent 1px);
-  background-size: 32px 32px;
+    radial-gradient(circle at top left, rgba(33, 122, 74, 0.08), transparent 32rem),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.68), rgba(248, 246, 240, 0));
+  line-height: 1.5;
 }
 
 a,

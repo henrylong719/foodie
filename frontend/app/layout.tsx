@@ -22,14 +22,14 @@ export default function RootLayout({
           crossOrigin="anonymous"
         />
         <link
-          href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600&family=Geist:wght@400;500&family=Geist+Mono:wght@400;500&display=swap"
+          href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600&family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500;600&display=swap"
           rel="stylesheet"
         />
       </head>
       <body>
         <div className="flex min-h-screen flex-col md:flex-row">
           <Sidebar />
-          <main className="min-h-screen min-w-0 flex-1 bg-[color:rgba(244,247,246,0.78)]">
+          <main className="min-h-screen min-w-0 flex-1 bg-[color:rgba(248,246,240,0.74)]">
             {children}
           </main>
         </div>

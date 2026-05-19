@@ -3,7 +3,16 @@
 import { useEffect, useState } from "react";
 import { listProducts, listCategories } from "@/lib/api";
 import type { Product } from "@/lib/types";
-import { PageHeader, ErrorNote, StockDot } from "@/components/ui";
+import {
+  Card,
+  EmptyState,
+  ErrorNote,
+  PageContent,
+  PageHeader,
+  SectionTitle,
+  StatusBadge,
+  StockDot,
+} from "@/components/ui";
 
 export default function CatalogPage() {
   const [categories, setCategories] = useState<string[]>([]);
@@ -42,68 +51,100 @@ export default function CatalogPage() {
         subtitle="Products the assistant can resolve and recommend"
       />
 
-      <div className="flex flex-wrap gap-2 border-b bg-[color:rgba(255,255,255,0.5)] px-4 py-4 backdrop-blur sm:px-6 lg:px-10">
-        <FilterChip
-          label="All"
-          active={active === null}
-          onClick={() => setActive(null)}
-        />
-        {categories.map((c) => (
+      <div className="border-b bg-[color:rgba(255,255,255,0.56)] backdrop-blur">
+        <div className="mx-auto flex w-full max-w-6xl gap-2 overflow-x-auto px-4 py-4 sm:px-6 md:flex-wrap md:overflow-visible lg:px-8">
           <FilterChip
-            key={c}
-            label={c}
-            active={active === c}
-            onClick={() => setActive(c)}
+            label="All"
+            active={active === null}
+            onClick={() => setActive(null)}
           />
-        ))}
+          {categories.map((c) => (
+            <FilterChip
+              key={c}
+              label={c}
+              active={active === c}
+              onClick={() => setActive(c)}
+            />
+          ))}
+        </div>
       </div>
 
-      <div className="px-4 py-6 sm:px-6 lg:px-10 lg:py-8">
+      <PageContent>
+        <SectionTitle
+          title="Product resolver"
+          subtitle="Stock, pricing, category, and popularity signals used by the assistant."
+        />
         {loading ? (
-          <p className="rounded-2xl border border-dashed bg-[color:rgba(255,255,255,0.72)] px-5 py-8 text-sm text-[var(--color-text-dim)] shadow-sm">
-            Loading…
-          </p>
+          <EmptyState title="Loading catalog">
+            Fetching products and category metadata.
+          </EmptyState>
+        ) : products.length === 0 ? (
+          <EmptyState
+            title="No products found"
+            action={
+              active ? (
+                <button
+                  onClick={() => setActive(null)}
+                  className="inline-flex h-9 items-center rounded-full border border-[color:rgba(33,122,74,0.24)] bg-[color:rgba(33,122,74,0.08)] px-4 text-xs font-semibold text-[var(--color-accent)] transition hover:border-[var(--color-accent)] hover:bg-[var(--color-accent)] hover:text-white"
+                >
+                  Show all products
+                </button>
+              ) : null
+            }
+          >
+            Try another category or check the catalog source.
+          </EmptyState>
         ) : (
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
             {products.map((p) => (
-              <div
+              <Card
                 key={p._id}
-                className="row-in rounded-2xl border bg-[color:rgba(255,255,255,0.86)] p-5 shadow-sm transition hover:-translate-y-0.5 hover:border-[color:rgba(15,118,110,0.22)] hover:shadow-md"
+                className="row-in p-5 transition hover:-translate-y-0.5 hover:border-[color:rgba(33,122,74,0.22)] hover:shadow-[0_1px_2px_rgba(32,35,31,0.05),0_18px_40px_rgba(32,35,31,0.075)]"
               >
                 <div className="flex items-start gap-3">
                   <StockDot inStock={p.in_stock} />
-                  <span className="min-w-0 flex-1 text-sm font-medium leading-snug text-[var(--color-text)]">
-                    {p.name}
-                  </span>
-                </div>
-                <div className="mt-4 flex items-center gap-2 text-xs text-[var(--color-text-dim)]">
-                  <span className="truncate">{p.brand}</span>
-                  <span className="text-[var(--color-border-strong)]">/</span>
-                  <span className="truncate">{p.subcategory}</span>
-                  <span className="flex-1" />
+                  <div className="min-w-0 flex-1">
+                    <div className="text-sm font-semibold leading-snug text-[var(--color-text)]">
+                      {p.name}
+                    </div>
+                    <div className="mt-1 truncate text-xs text-[var(--color-text-dim)]">
+                      {p.brand}
+                    </div>
+                  </div>
                   <span
-                    className="shrink-0 font-medium text-[var(--color-accent)]"
+                    className="shrink-0 text-sm font-semibold text-[var(--color-accent)]"
                     style={{ fontFamily: "var(--font-mono)" }}
                   >
                     ${p.price.toFixed(2)}
                   </span>
                 </div>
+                <div className="mt-4 flex flex-wrap items-center gap-2">
+                  <span className="rounded-full border bg-[var(--color-surface-2)] px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.04em] text-[var(--color-text-dim)]">
+                    {p.category}
+                  </span>
+                  <span className="rounded-full border bg-white px-2.5 py-1 text-[11px] font-medium text-[var(--color-text-dim)]">
+                    {p.subcategory}
+                  </span>
+                  <StatusBadge
+                    status={p.in_stock ? "in_stock" : "out_of_stock"}
+                  />
+                </div>
                 <div className="mt-4 flex items-center gap-2">
-                  <span className="text-[10px] font-semibold uppercase tracking-wide text-[var(--color-text-dim)]">
+                  <span className="text-[10px] font-semibold uppercase tracking-[0.08em] text-[var(--color-text-dim)]">
                     popularity
                   </span>
-                  <div className="h-2 flex-1 overflow-hidden rounded-full bg-[var(--color-surface-3)]">
+                  <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-[var(--color-surface-3)]">
                     <div
-                      className="h-full rounded-full bg-[var(--color-accent)]"
+                      className="h-full rounded-full bg-[var(--color-accent-dim)]"
                       style={{ width: `${p.popularity_score}%` }}
                     />
                   </div>
                 </div>
-              </div>
+              </Card>
             ))}
           </div>
         )}
-      </div>
+      </PageContent>
     </div>
   );
 }
@@ -120,10 +161,10 @@ function FilterChip({
   return (
     <button
       onClick={onClick}
-      className={`rounded-full border px-3.5 py-2 text-xs font-semibold transition-colors ${
+      className={`shrink-0 rounded-full border px-3.5 py-2 text-xs font-semibold transition-colors ${
         active
-          ? "border-[color:rgba(15,118,110,0.24)] bg-[color:rgba(15,118,110,0.1)] text-[var(--color-accent)]"
-          : "bg-[color:rgba(255,255,255,0.7)] text-[var(--color-text-dim)] hover:border-[var(--color-border-strong)] hover:bg-[var(--color-surface)] hover:text-[var(--color-text)]"
+          ? "border-[color:rgba(33,122,74,0.32)] bg-[color:rgba(33,122,74,0.12)] text-[var(--color-accent)] shadow-[inset_0_0_0_1px_rgba(33,122,74,0.05)]"
+          : "bg-[color:rgba(255,255,255,0.72)] text-[var(--color-text-dim)] hover:border-[var(--color-border-strong)] hover:bg-[var(--color-surface)] hover:text-[var(--color-text)]"
       }`}
     >
       {label}

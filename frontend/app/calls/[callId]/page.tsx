@@ -2,7 +2,14 @@
 
 import { use, useEffect, useRef, useState } from "react";
 import { API_BASE } from "@/lib/api";
-import { PageHeader } from "@/components/ui";
+import {
+  Card,
+  EmptyState,
+  PageContent,
+  PageHeader,
+  StatusBadge,
+  cx,
+} from "@/components/ui";
 
 // One line of the live transcript.
 interface TranscriptLine {
@@ -62,54 +69,91 @@ export default function LiveCallPage({
     <div>
       <PageHeader title="Live Call" subtitle={`call ${callId}`} />
 
-      <div className="flex items-center gap-2 border-b bg-[color:rgba(255,255,255,0.5)] px-4 py-4 backdrop-blur sm:px-6 lg:px-10">
-        <span
-          className={`h-2.5 w-2.5 rounded-full ${connected ? "live-dot" : ""}`}
-          style={{
-            background: connected
-              ? "var(--color-good)"
-              : "var(--color-text-dim)",
-          }}
-        />
-        <span className="text-xs font-semibold uppercase tracking-wide text-[var(--color-text-dim)]">
-          {connected ? "connected — listening" : "waiting for call stream"}
-        </span>
+      <div className="border-b bg-[color:rgba(255,255,255,0.56)] backdrop-blur">
+        <div className="mx-auto flex w-full max-w-6xl flex-wrap items-center gap-3 px-4 py-4 sm:px-6 lg:px-8">
+          <span
+            className={`h-2.5 w-2.5 rounded-full ${connected ? "live-dot" : ""}`}
+            style={{
+              background: connected
+                ? "var(--color-good)"
+                : "var(--color-text-dim)",
+            }}
+          />
+          <StatusBadge status={connected ? "active" : "waiting"}>
+            {connected ? "connected - listening" : "waiting for call stream"}
+          </StatusBadge>
+          <span
+            className="text-xs text-[var(--color-text-dim)]"
+            style={{ fontFamily: "var(--font-mono)" }}
+          >
+            {API_BASE}/calls/{callId}/stream
+          </span>
+        </div>
       </div>
 
-      <div className="px-4 py-6 sm:px-6 lg:px-10 lg:py-8">
-        <div
-          ref={scrollRef}
-          className="h-[62vh] space-y-3 overflow-y-auto rounded-2xl border bg-[color:rgba(255,255,255,0.86)] p-4 shadow-sm sm:p-5"
-        >
+      <PageContent>
+        <Card className="overflow-hidden">
+          <div className="flex items-center justify-between gap-4 border-b bg-[var(--color-surface-2)] px-4 py-4 sm:px-5">
+            <div>
+              <h2 className="text-sm font-semibold text-[var(--color-text)]">
+                Transcript
+              </h2>
+              <p className="mt-1 text-xs text-[var(--color-text-dim)]">
+                Live assistant and customer messages stream into this log.
+              </p>
+            </div>
+            <span
+              className="text-xs text-[var(--color-text-dim)]"
+              style={{ fontFamily: "var(--font-mono)" }}
+            >
+              {lines.length} lines
+            </span>
+          </div>
+          <div
+            ref={scrollRef}
+            className="h-[62vh] space-y-4 overflow-y-auto bg-[color:rgba(255,255,255,0.72)] p-4 sm:p-5"
+          >
           {lines.length === 0 ? (
-            <p className="max-w-2xl text-sm leading-6 text-[var(--color-text-dim)]">
+            <EmptyState title="Waiting for transcript">
               The transcript will stream here line by line as the call
-              progresses. The live relay endpoint is wired up in the next
-              build step.
-            </p>
+              progresses. Once the stream connects, assistant and customer
+              messages will separate into a readable call log.
+            </EmptyState>
           ) : (
             lines.map((line, i) => (
               <div
                 key={i}
-                className="row-in flex gap-3 rounded-xl px-3 py-2 text-sm transition hover:bg-[var(--color-surface-2)]"
+                className={cx(
+                  "row-in flex",
+                  line.role === "assistant" ? "justify-start" : "justify-end",
+                )}
               >
-                <span
-                  className={`w-20 shrink-0 text-xs font-semibold uppercase tracking-wide ${
+                <div
+                  className={cx(
+                    "max-w-[min(42rem,88%)] rounded-2xl border px-4 py-3 text-sm shadow-sm",
                     line.role === "assistant"
-                      ? "text-[var(--color-accent)]"
-                      : "text-[var(--color-text-dim)]"
-                  }`}
+                      ? "bg-[var(--color-surface-2)] text-[var(--color-text)]"
+                      : "border-[color:rgba(33,122,74,0.18)] bg-[color:rgba(33,122,74,0.08)] text-[var(--color-text)]",
+                  )}
                 >
-                  {line.role}
-                </span>
-                <span className="leading-6 text-[var(--color-text)]">
-                  {line.text}
-                </span>
+                  <div
+                    className={cx(
+                      "mb-1 text-[11px] font-semibold uppercase tracking-[0.1em]",
+                      line.role === "assistant"
+                        ? "text-[var(--color-accent)]"
+                        : "text-[var(--color-text-dim)]",
+                    )}
+                  >
+                    {line.role}
+                  </div>
+                  <div className="leading-6">{line.text}</div>
+                </div>
               </div>
             ))
           )}
-        </div>
-      </div>
+          </div>
+        </Card>
+      </PageContent>
     </div>
   );
 }
