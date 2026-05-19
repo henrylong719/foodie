@@ -1,26 +1,114 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
+/*
+  Design system: modern operations dashboard.
+  Quiet surfaces, crisp borders, strong readability, and purposeful accents.
+  Fonts are loaded via a <link> tag in layout.tsx (a CSS @import cannot
+  follow the inlined Tailwind import).
+*/
+
+@theme {
+  --color-bg: #f4f7f6;
+  --color-surface: #ffffff;
+  --color-surface-2: #eef5f3;
+  --color-surface-3: #dfe9e6;
+  --color-border: #d8e3df;
+  --color-border-strong: #b6c7c2;
+  --color-text: #102321;
+  --color-text-dim: #61716e;
+  --color-accent: #0f766e;
+  --color-accent-dim: #99d8d0;
+  --color-good: #15803d;
+  --color-warn: #b86b17;
+  --color-danger: #c2413a;
+
+  --font-display: "Fraunces", Georgia, serif;
+  --font-body: "Geist", system-ui, sans-serif;
+  --font-mono: "Geist Mono", "SF Mono", monospace;
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+* {
+  border-color: var(--color-border);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+html,
+body {
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-family: var(--font-body);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background-image:
+    linear-gradient(rgba(16, 35, 33, 0.035) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(16, 35, 33, 0.028) 1px, transparent 1px);
+  background-size: 32px 32px;
+}
+
+a,
+button {
+  outline-offset: 3px;
+}
+
+button {
+  cursor: pointer;
+}
+
+a:focus-visible,
+button:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 3px;
+}
+
+::selection {
+  background: var(--color-accent);
+  color: white;
+}
+
+/* thin scrollbars that suit the console feel */
+::-webkit-scrollbar {
+  width: 9px;
+  height: 9px;
+}
+::-webkit-scrollbar-track {
+  background: var(--color-surface-2);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--color-border);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-border-strong);
+}
+
+@keyframes pulse-live {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+
+.live-dot {
+  animation: pulse-live 1.4s ease-in-out infinite;
+}
+
+@keyframes row-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.row-in {
+  animation: row-in 0.3s ease both;
 }

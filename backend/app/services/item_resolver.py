@@ -16,16 +16,15 @@ Decision tree:
      c. A popular brand exists for the subcategory  -> RECOMMEND (popularity)
      d. Nothing to go on                            -> ASK
 """
-
 from motor.motor_asyncio import AsyncIOMotorDatabase
 
 from app.services import customer_history, resolution
 
 # resolution statuses returned to the agent
-RESOLVED = "resolved"  # exact product locked in
-CONFIRM = "confirm"  # propose a product, agent must confirm
-RECOMMEND = "recommend"  # suggest a brand, agent must confirm
-ASK = "ask"  # nothing to go on, agent must ask
+RESOLVED = "resolved"      # exact product locked in
+CONFIRM = "confirm"        # propose a product, agent must confirm
+RECOMMEND = "recommend"    # suggest a brand, agent must confirm
+ASK = "ask"                # nothing to go on, agent must ask
 
 
 def _strip_brands(mention: str, known_brands: set[str]) -> tuple[str, str | None]:
@@ -59,11 +58,8 @@ async def resolve_item(
     """
     mention = (mention or "").strip()
     if not mention:
-        return {
-            "status": ASK,
-            "mention": mention,
-            "message": "I didn't catch that — could you say it again?",
-        }
+        return {"status": ASK, "mention": mention,
+                "message": "I didn't catch that — could you say it again?"}
 
     # --- detect a brand in the mention, search on the product term only ---
     known_brands = set(await db.products.distinct("brand"))
@@ -72,11 +68,8 @@ async def resolve_item(
     # --- Stage 1: identify the subcategory via product search ---
     candidates = await resolution.search_products(db, search_term, limit=10)
     if not candidates:
-        return {
-            "status": ASK,
-            "mention": mention,
-            "message": f"I couldn't find '{mention}' — could you describe it differently?",
-        }
+        return {"status": ASK, "mention": mention,
+                "message": f"I couldn't find '{mention}' — could you describe it differently?"}
 
     subcategory = candidates[0]["subcategory"]
 
@@ -85,49 +78,39 @@ async def resolve_item(
         for product in candidates:
             if product["brand"] == named_brand:
                 return {
-                    "status": RESOLVED,
-                    "mention": mention,
-                    "subcategory": subcategory,
-                    "brand_source": "mentioned",
+                    "status": RESOLVED, "mention": mention,
+                    "subcategory": subcategory, "brand_source": "mentioned",
                     "product": product,
                     "message": f"Got it — {product['name']}.",
                 }
         # brand named but not available here — note it, continue to fallback
 
     # --- Stage 2b: history-first — did they buy this subcategory before? ---
-    past = await customer_history.infer_brand_from_history(db, customer_id, subcategory)
+    past = await customer_history.infer_brand_from_history(
+        db, customer_id, subcategory)
     if past is not None:
         return {
-            "status": CONFIRM,
-            "mention": mention,
-            "subcategory": subcategory,
-            "brand_source": "history",
+            "status": CONFIRM, "mention": mention,
+            "subcategory": subcategory, "brand_source": "history",
             "product": past,
-            "message": (
-                f"You ordered {past['name']} last time — would you like that again?"
-            ),
+            "message": (f"You ordered {past['name']} last time — "
+                        f"would you like that again?"),
         }
 
     # --- Stage 2c: popularity fallback — recommend the top brand ---
     top_brand = await resolution.get_top_brand(db, subcategory)
     if top_brand is not None:
         return {
-            "status": RECOMMEND,
-            "mention": mention,
-            "subcategory": subcategory,
-            "brand_source": "recommended",
+            "status": RECOMMEND, "mention": mention,
+            "subcategory": subcategory, "brand_source": "recommended",
             "brand": top_brand["brand"],
-            "message": (
-                f"Our most popular {subcategory.lower()} is "
-                f"{top_brand['brand']} — would you like that?"
-            ),
+            "message": (f"Our most popular {subcategory.lower()} is "
+                        f"{top_brand['brand']} — would you like that?"),
         }
 
     # --- Stage 2d: nothing to go on — ask ---
     return {
-        "status": ASK,
-        "mention": mention,
-        "subcategory": subcategory,
+        "status": ASK, "mention": mention, "subcategory": subcategory,
         "message": f"Which brand of {subcategory.lower()} would you like?",
     }
 
@@ -151,17 +134,12 @@ async def resolve_brand(
     for product in candidates:
         if product["brand"].lower() == brand.lower():
             return {
-                "status": RESOLVED,
-                "subcategory": subcategory,
-                "brand_source": "mentioned",
-                "product": product,
+                "status": RESOLVED, "subcategory": subcategory,
+                "brand_source": "mentioned", "product": product,
                 "message": f"Got it — {product['name']}.",
             }
     return {
-        "status": ASK,
-        "subcategory": subcategory,
-        "message": (
-            f"Sorry, we don't have {brand} in {subcategory.lower()} — "
-            f"is there another brand you'd like?"
-        ),
+        "status": ASK, "subcategory": subcategory,
+        "message": (f"Sorry, we don't have {brand} in {subcategory.lower()} — "
+                    f"is there another brand you'd like?"),
     }

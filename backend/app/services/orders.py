@@ -6,7 +6,6 @@ of a completed call. Also handles do-not-call opt-outs.
 
 Kept HTTP-free so it can be unit-tested directly.
 """
-
 from datetime import datetime, timezone
 
 from bson import ObjectId
@@ -51,14 +50,12 @@ async def save_order(
     # normalize items — keep only the fields the schema defines
     clean_items = []
     for item in items:
-        clean_items.append(
-            {
-                "product_id": str(item.get("product_id", "")),
-                "name": item.get("name", ""),
-                "quantity": int(item.get("quantity", 1)),
-                "brand_source": item.get("brand_source", "mentioned"),
-            }
-        )
+        clean_items.append({
+            "product_id": str(item.get("product_id", "")),
+            "name": item.get("name", ""),
+            "quantity": int(item.get("quantity", 1)),
+            "brand_source": item.get("brand_source", "mentioned"),
+        })
 
     doc = {
         "customer_id": oid,
@@ -70,6 +67,36 @@ async def save_order(
     }
     result = await db.captured_orders.insert_one(doc)
     return {"ok": True, "order_id": str(result.inserted_id)}
+
+
+async def list_orders(
+    db: AsyncIOMotorDatabase,
+    limit: int = 50,
+) -> list[dict]:
+    """Return captured orders, most recent first, with customer names joined."""
+    orders_raw = await db.captured_orders.find().sort(
+        "created_at", -1).to_list(length=limit)
+
+    # join customer names in one query
+    cust_ids = list({o["customer_id"] for o in orders_raw})
+    customers = await db.customers.find(
+        {"_id": {"$in": cust_ids}}).to_list(length=len(cust_ids) or 1)
+    names = {c["_id"]: c["name"] for c in customers}
+
+    result = []
+    for o in orders_raw:
+        result.append({
+            "_id": str(o["_id"]),
+            "customer_id": str(o["customer_id"]),
+            "customer_name": names.get(o["customer_id"], "Unknown"),
+            "call_id": o.get("call_id", ""),
+            "created_at": o["created_at"].isoformat() if o.get("created_at") else None,
+            "status": o.get("status", ""),
+            "items": o.get("items", []),
+            "item_count": len(o.get("items", [])),
+            "transcript_url": o.get("transcript_url"),
+        })
+    return result
 
 
 async def flag_do_not_call(

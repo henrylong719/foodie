@@ -4,7 +4,6 @@ Runs against mongomock with the async-cursor adapter (mongomock is sync-only).
 Verifies subcategory-grained filtering, recency ordering, and the brand-
 inference helper.
 """
-
 import asyncio
 from datetime import datetime, timedelta, timezone
 
@@ -49,49 +48,23 @@ _raw = mongomock.MongoClient()["test"]
 CUST = ObjectId()
 now = datetime.now(timezone.utc)
 
-_raw.order_history.insert_many(
-    [
-        {  # oldest — Smith's chips
-            "customer_id": CUST,
-            "date": now - timedelta(days=60),
-            "items": [
-                {
-                    "product_id": ObjectId(),
-                    "name": "Smith's Original Potato Chips 150g",
-                    "category": "Snacks",
-                    "subcategory": "Potato Chips",
-                    "quantity": 2,
-                }
-            ],
-        },
-        {  # middle — chocolate (same category, different subcategory)
-            "customer_id": CUST,
-            "date": now - timedelta(days=30),
-            "items": [
-                {
-                    "product_id": ObjectId(),
-                    "name": "Cadbury Dairy Milk Chocolate 200g",
-                    "category": "Snacks",
-                    "subcategory": "Chocolate",
-                    "quantity": 1,
-                }
-            ],
-        },
-        {  # newest — Doritos chips
-            "customer_id": CUST,
-            "date": now - timedelta(days=5),
-            "items": [
-                {
-                    "product_id": ObjectId(),
-                    "name": "Doritos Cheese Potato Chips 170g",
-                    "category": "Snacks",
-                    "subcategory": "Potato Chips",
-                    "quantity": 3,
-                }
-            ],
-        },
-    ]
-)
+_raw.order_history.insert_many([
+    {  # oldest — Smith's chips
+        "customer_id": CUST, "date": now - timedelta(days=60),
+        "items": [{"product_id": ObjectId(), "name": "Smith's Original Potato Chips 150g",
+                   "category": "Snacks", "subcategory": "Potato Chips", "quantity": 2}],
+    },
+    {  # middle — chocolate (same category, different subcategory)
+        "customer_id": CUST, "date": now - timedelta(days=30),
+        "items": [{"product_id": ObjectId(), "name": "Cadbury Dairy Milk Chocolate 200g",
+                   "category": "Snacks", "subcategory": "Chocolate", "quantity": 1}],
+    },
+    {  # newest — Doritos chips
+        "customer_id": CUST, "date": now - timedelta(days=5),
+        "items": [{"product_id": ObjectId(), "name": "Doritos Cheese Potato Chips 170g",
+                   "category": "Snacks", "subcategory": "Potato Chips", "quantity": 3}],
+    },
+])
 
 db = _AsyncDB(_raw)
 CUST_ID = str(CUST)

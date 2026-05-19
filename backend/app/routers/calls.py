@@ -14,11 +14,16 @@ customer_id is NOT a tool argument — it is set in call metadata when the
 backend places the outbound call, and Vapi echoes it back here.
 """
 
+import asyncio
+import json
+
 from fastapi import APIRouter, Depends, Request
+from fastapi.responses import StreamingResponse
 from motor.motor_asyncio import AsyncIOMotorDatabase
 
 from app.db import get_db
 from app.services import item_resolver, orders
+from app.services.event_hub import hub
 
 router = APIRouter(prefix="/calls", tags=["calls"])
 
@@ -79,12 +84,30 @@ async def vapi_webhook(
     request: Request,
     db: AsyncIOMotorDatabase = Depends(get_db),
 ):
-    """Receive Vapi server messages. Handles the 'tool-calls' type."""
+    """Receive Vapi server messages. Handles 'tool-calls' and 'transcript'."""
     body = await request.json()
     message = body.get("message", {})
+    msg_type = message.get("type", "")
+
+    # --- transcript events: relay final transcripts to live dashboards ---
+    if msg_type == "transcript":
+        call_id = message.get("call", {}).get("id", "")
+        # Vapi defaults transcriptType to "final" when omitted. Forward only
+        # final lines — partials get superseded and would flicker the UI.
+        if message.get("transcriptType", "final") == "final":
+            role = message.get("role", "")
+            # frontend expects "customer"/"assistant"; Vapi sends "user"/"assistant"
+            line = {
+                "role": "customer" if role == "user" else "assistant",
+                "text": message.get("transcript", ""),
+                "ts": message.get("timestamp") or 0,
+            }
+            if call_id and line["text"]:
+                await hub.publish(call_id, line)
+        return {"received": True}
 
     # Only tool-calls need a meaningful reply; acknowledge anything else.
-    if message.get("type") != "tool-calls":
+    if msg_type != "tool-calls":
         return {"received": True}
 
     call = message.get("call", {})
@@ -108,3 +131,38 @@ async def vapi_webhook(
         )
 
     return {"results": results}
+
+
+@router.get("/{call_id}/stream")
+async def call_transcript_stream(call_id: str):
+    """Server-Sent Events stream of live transcript lines for a call.
+
+    The dashboard's live-call page opens an EventSource against this. Each
+    transcript line published to the hub is sent as one SSE 'data:' frame.
+    A comment ping every 15s keeps the connection from idling out.
+    """
+    queue = hub.subscribe(call_id)
+
+    async def event_generator():
+        try:
+            # initial comment so the browser marks the connection open
+            yield ": connected\n\n"
+            while True:
+                try:
+                    line = await asyncio.wait_for(queue.get(), timeout=15.0)
+                    yield f"data: {json.dumps(line)}\n\n"
+                except asyncio.TimeoutError:
+                    # keep-alive ping (SSE comment line)
+                    yield ": ping\n\n"
+        finally:
+            hub.unsubscribe(call_id, queue)
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",  # disable proxy buffering
+        },
+    )

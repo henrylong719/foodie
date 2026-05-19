@@ -1,5 +1,4 @@
 """Local test: runs seed.py's real logic against an in-memory MongoDB."""
-
 import mongomock
 import seed
 
@@ -17,22 +16,10 @@ assert summary["order_history"] > 0, "history should not be empty"
 assert summary["captured_orders"] == 0, "captured_orders should start empty"
 
 p = db.products.find_one()
-for field in (
-    "name",
-    "brand",
-    "category",
-    "subcategory",
-    "aliases",
-    "size",
-    "unit",
-    "price",
-    "in_stock",
-    "popularity_score",
-):
+for field in ("name", "brand", "category", "subcategory", "aliases",
+              "size", "unit", "price", "in_stock", "popularity_score"):
     assert field in p, f"product missing field: {field}"
-assert isinstance(p["aliases"], list) and p["aliases"], (
-    "aliases must be a non-empty list"
-)
+assert isinstance(p["aliases"], list) and p["aliases"], "aliases must be a non-empty list"
 
 c = db.customers.find_one()
 for field in ("name", "phone", "do_not_call", "consent", "preferred_language"):
@@ -40,9 +27,7 @@ for field in ("name", "phone", "do_not_call", "consent", "preferred_language"):
 assert c["phone"].startswith("+614"), "phone format wrong"
 
 h = db.order_history.find_one()
-assert h["items"] and "category" in h["items"][0], (
-    "history item must denormalize category"
-)
+assert h["items"] and "category" in h["items"][0], "history item must denormalize category"
 
 # every history item references a real product id
 prod_ids = {x["_id"] for x in db.products.find({}, {"_id": 1})}
@@ -81,12 +66,9 @@ assert any(s == 0 for s in scores), "unsold products should score 0"
 # a product's score must match the distinct-buyer count in order_history
 top_product = db.products.find_one(sort=[("popularity_score", -1)])
 buyers = db.order_history.distinct(
-    "customer_id", {"items.product_id": top_product["_id"]}
-)
-print(
-    f"  top product: {top_product['name']}  "
-    f"(score {top_product['popularity_score']}, {len(buyers)} buyers)"
-)
+    "customer_id", {"items.product_id": top_product["_id"]})
+print(f"  top product: {top_product['name']}  "
+      f"(score {top_product['popularity_score']}, {len(buyers)} buyers)")
 assert len(buyers) > 0, "top-scored product must actually appear in history"
 
 # brand_popularity: per-(subcategory, brand), normalized per subcategory
@@ -98,20 +80,18 @@ for doc in bp:
     assert 1 <= doc["score"] <= 100, "brand score must be 1-100"
 # each subcategory present must have exactly one brand at score 100
 from collections import defaultdict
-
 by_subcat = defaultdict(list)
 for doc in bp:
     by_subcat[doc["subcategory"]].append(doc)
 for subcat, docs in by_subcat.items():
     assert max(d["score"] for d in docs) == 100, f"{subcat}: no top brand at 100"
 # spot-check: top chips brand
-chips_brands = sorted(by_subcat.get("Potato Chips", []), key=lambda d: -d["score"])
+chips_brands = sorted(by_subcat.get("Potato Chips", []),
+                      key=lambda d: -d["score"])
 if chips_brands:
     top = chips_brands[0]
-    print(
-        f"  top 'Potato Chips' brand: {top['brand']} "
-        f"(score {top['score']}, {top['buyer_count']} buyers)"
-    )
+    print(f"  top 'Potato Chips' brand: {top['brand']} "
+          f"(score {top['score']}, {top['buyer_count']} buyers)")
 print(f"  brand_popularity rows: {len(bp)} across {len(by_subcat)} subcategories")
 
 print("\nALL CHECKS PASSED")

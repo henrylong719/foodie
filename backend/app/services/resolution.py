@@ -12,7 +12,6 @@ Results are ranked by in-stock first, then popularity_score.
 
 Kept HTTP-free so it can be unit-tested directly.
 """
-
 from typing import Any
 
 from motor.motor_asyncio import AsyncIOMotorDatabase
@@ -54,7 +53,9 @@ async def search_products(
         return []
 
     # 1. Exact alias match — most reliable signal.
-    alias_hits = await db.products.find({"aliases": normalized}).to_list(length=100)
+    alias_hits = await db.products.find(
+        {"aliases": normalized}
+    ).to_list(length=100)
 
     if alias_hits:
         return [_serialize(p) for p in _rank(alias_hits)[:limit]]

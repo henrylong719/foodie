@@ -4,7 +4,6 @@ Pydantic schemas mirroring the MongoDB collections.
 These document the data shapes and validate API input/output. ObjectId fields
 are represented as strings at the API boundary.
 """
-
 from datetime import datetime
 
 from pydantic import BaseModel, Field

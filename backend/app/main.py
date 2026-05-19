@@ -4,7 +4,6 @@ FastAPI application entry point.
 Wires up: DB connect/disconnect via lifespan, CORS for the Next.js frontend,
 the feature routers, and a /health endpoint that verifies the DB connection.
 """
-
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -12,7 +11,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app import db
 from app.config import settings
-from app.routers import calls, customers, products
+from app.routers import calls, customers, orders, products
 
 
 @asynccontextmanager
@@ -36,6 +35,7 @@ app.add_middleware(
 
 app.include_router(products.router)
 app.include_router(customers.router)
+app.include_router(orders.router)
 app.include_router(calls.router)
 
 

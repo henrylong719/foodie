@@ -3,7 +3,6 @@
 Uses mongomock so no live Atlas is needed. Patches app.db to use an in-memory
 client, then drives the app with FastAPI's TestClient (which runs lifespan).
 """
-
 import mongomock
 from fastapi.testclient import TestClient
 
@@ -12,12 +11,10 @@ import app.db as db_module
 # --- swap the async Motor client for an in-memory mock ---
 _mock_client = mongomock.MongoClient()
 
-
 # mongomock doesn't implement the admin "ping" command; real Atlas does.
 # Patch it so the smoke test reflects real-cluster behaviour.
 async def _admin_command(cmd, *args, **kwargs):
     return {"ok": 1}
-
 
 _mock_client.admin.command = _admin_command
 

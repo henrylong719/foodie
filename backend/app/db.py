@@ -8,7 +8,6 @@ lifespan in main.py.
 The seed script uses sync pymongo separately — a one-shot script has no reason
 to be async — but points at the same cluster and database.
 """
-
 from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorDatabase
 
 from app.config import settings

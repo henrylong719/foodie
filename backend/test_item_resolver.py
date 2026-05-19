@@ -4,7 +4,6 @@ mongomock is sync-only and lacks $text, so this uses the async adapter and
 relies on the exact-alias path (not $text). Each branch is triggered by
 deliberately shaped seed data.
 """
-
 import asyncio
 from datetime import datetime, timedelta, timezone
 
@@ -17,37 +16,23 @@ from app.services.item_resolver import RESOLVED, CONFIRM, RECOMMEND, ASK
 
 # --- async adapter (mongomock sync -> async) --------------------------------
 class _Cur:
-    def __init__(self, c):
-        self._c = c
-
-    def sort(self, *a, **k):
-        return _Cur(self._c.sort(*a, **k))
-
+    def __init__(self, c): self._c = c
+    def sort(self, *a, **k): return _Cur(self._c.sort(*a, **k))
     async def to_list(self, length=None):
         d = list(self._c)
         return d[:length] if length is not None else d
 
 
 class _Coll:
-    def __init__(self, c):
-        self._c = c
-
-    def find(self, *a, **k):
-        return _Cur(self._c.find(*a, **k))
-
-    async def find_one(self, *a, **k):
-        return self._c.find_one(*a, **k)
-
-    async def distinct(self, *a, **k):
-        return self._c.distinct(*a, **k)
+    def __init__(self, c): self._c = c
+    def find(self, *a, **k): return _Cur(self._c.find(*a, **k))
+    async def find_one(self, *a, **k): return self._c.find_one(*a, **k)
+    async def distinct(self, *a, **k): return self._c.distinct(*a, **k)
 
 
 class _DB:
-    def __init__(self, db):
-        self._db = db
-
-    def __getattr__(self, name):
-        return _Coll(getattr(self._db, name))
+    def __init__(self, db): self._db = db
+    def __getattr__(self, name): return _Coll(getattr(self._db, name))
 
 
 # --- seed -------------------------------------------------------------------
@@ -56,91 +41,40 @@ CUST = ObjectId()
 
 # Products: chips (3 brands) and milk (1 brand). Aliases drive resolution.
 chips_smiths = ObjectId()
-_raw.products.insert_many(
-    [
-        {
-            "_id": chips_smiths,
-            "name": "Smith's Original Potato Chips 150g",
-            "brand": "Smith's",
-            "category": "Snacks",
-            "subcategory": "Potato Chips",
-            "aliases": ["chips", "crisps"],
-            "size": "150g",
-            "unit": "packet",
-            "price": 4.5,
-            "in_stock": True,
-            "popularity_score": 90,
-        },
-        {
-            "_id": ObjectId(),
-            "name": "Doritos Cheese Potato Chips 170g",
-            "brand": "Doritos",
-            "category": "Snacks",
-            "subcategory": "Potato Chips",
-            "aliases": ["chips", "crisps"],
-            "size": "170g",
-            "unit": "packet",
-            "price": 5.0,
-            "in_stock": True,
-            "popularity_score": 70,
-        },
-        {
-            "_id": ObjectId(),
-            "name": "Pauls Full Cream Milk 2L",
-            "brand": "Pauls",
-            "category": "Dairy",
-            "subcategory": "Milk",
-            "aliases": ["milk", "fresh milk"],
-            "size": "2L",
-            "unit": "bottle",
-            "price": 3.5,
-            "in_stock": True,
-            "popularity_score": 60,
-        },
-    ]
-)
+_raw.products.insert_many([
+    {"_id": chips_smiths, "name": "Smith's Original Potato Chips 150g",
+     "brand": "Smith's", "category": "Snacks", "subcategory": "Potato Chips",
+     "aliases": ["chips", "crisps"], "size": "150g", "unit": "packet",
+     "price": 4.5, "in_stock": True, "popularity_score": 90},
+    {"_id": ObjectId(), "name": "Doritos Cheese Potato Chips 170g",
+     "brand": "Doritos", "category": "Snacks", "subcategory": "Potato Chips",
+     "aliases": ["chips", "crisps"], "size": "170g", "unit": "packet",
+     "price": 5.0, "in_stock": True, "popularity_score": 70},
+    {"_id": ObjectId(), "name": "Pauls Full Cream Milk 2L",
+     "brand": "Pauls", "category": "Dairy", "subcategory": "Milk",
+     "aliases": ["milk", "fresh milk"], "size": "2L", "unit": "bottle",
+     "price": 3.5, "in_stock": True, "popularity_score": 60},
+])
 
 # brand_popularity: Doritos is the top chips brand. NOTE: no Milk row, so the
 # milk no-history case will fall through to ASK.
-_raw.brand_popularity.insert_many(
-    [
-        {
-            "category": "Snacks",
-            "subcategory": "Potato Chips",
-            "brand": "Doritos",
-            "score": 100,
-            "buyer_count": 8,
-        },
-        {
-            "category": "Snacks",
-            "subcategory": "Potato Chips",
-            "brand": "Smith's",
-            "score": 60,
-            "buyer_count": 5,
-        },
-    ]
-)
+_raw.brand_popularity.insert_many([
+    {"category": "Snacks", "subcategory": "Potato Chips",
+     "brand": "Doritos", "score": 100, "buyer_count": 8},
+    {"category": "Snacks", "subcategory": "Potato Chips",
+     "brand": "Smith's", "score": 60, "buyer_count": 5},
+])
 
 # order history: the customer bought Smith's chips before (for the CONFIRM case)
-_raw.order_history.insert_one(
-    {
-        "customer_id": CUST,
-        "date": datetime.now(timezone.utc) - timedelta(days=20),
-        "items": [
-            {
-                "product_id": chips_smiths,
-                "name": "Smith's Original Potato Chips 150g",
-                "category": "Snacks",
-                "subcategory": "Potato Chips",
-                "quantity": 2,
-            }
-        ],
-    }
-)
+_raw.order_history.insert_one({
+    "customer_id": CUST, "date": datetime.now(timezone.utc) - timedelta(days=20),
+    "items": [{"product_id": chips_smiths, "name": "Smith's Original Potato Chips 150g",
+               "category": "Snacks", "subcategory": "Potato Chips", "quantity": 2}],
+})
 
 db = _DB(_raw)
 CUST_ID = str(CUST)
-NEW_CUST = str(ObjectId())  # a customer with no history
+NEW_CUST = str(ObjectId())   # a customer with no history
 
 
 async def run():

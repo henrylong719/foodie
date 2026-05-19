@@ -42,14 +42,7 @@ CATEGORIES = {
             "Popcorn": ["popcorn", "popping corn"],
             "Muesli Bars": ["muesli bars", "snack bars", "lunch box bars"],
         },
-        "brands": [
-            "Smith's",
-            "Doritos",
-            "Arnott's",
-            "Cadbury",
-            "Nobby's",
-            "The Natural Confectionery Co",
-        ],
+        "brands": ["Smith's", "Doritos", "Arnott's", "Cadbury", "Nobby's", "The Natural Confectionery Co"],
         "units": ["packet"],
         "sizes": ["100g", "150g", "175g", "200g", "250g"],
     },
@@ -62,15 +55,7 @@ CATEGORIES = {
             "Tea": ["tea", "tea bags", "black tea", "green tea"],
             "Energy Drink": ["energy drink", "energy", "sports drink"],
         },
-        "brands": [
-            "Coca-Cola",
-            "Schweppes",
-            "Golden Circle",
-            "Mount Franklin",
-            "Nescafe",
-            "Lipton",
-            "Red Bull",
-        ],
+        "brands": ["Coca-Cola", "Schweppes", "Golden Circle", "Mount Franklin", "Nescafe", "Lipton", "Red Bull"],
         "units": ["bottle", "can"],
         "sizes": ["375ml", "600ml", "1L", "1.25L", "2L"],
     },
@@ -83,14 +68,7 @@ CATEGORIES = {
             "Cream": ["cream", "thickened cream", "pouring cream"],
             "Eggs": ["eggs", "free range eggs", "dozen eggs"],
         },
-        "brands": [
-            "Pauls",
-            "Bega",
-            "Dairy Farmers",
-            "Western Star",
-            "Chobani",
-            "Devondale",
-        ],
+        "brands": ["Pauls", "Bega", "Dairy Farmers", "Western Star", "Chobani", "Devondale"],
         "units": ["bottle", "block", "tub", "carton"],
         "sizes": ["250g", "500g", "600ml", "1L", "2L"],
     },
@@ -100,24 +78,11 @@ CATEGORIES = {
             "Pasta": ["pasta", "spaghetti", "penne", "macaroni"],
             "Rice": ["rice", "white rice", "basmati", "jasmine rice"],
             "Cereal": ["cereal", "breakfast cereal", "muesli", "corn flakes"],
-            "Canned Goods": [
-                "canned food",
-                "tinned food",
-                "canned beans",
-                "tinned tomatoes",
-            ],
+            "Canned Goods": ["canned food", "tinned food", "canned beans", "tinned tomatoes"],
             "Cooking Oil": ["oil", "cooking oil", "olive oil", "vegetable oil"],
             "Flour & Sugar": ["flour", "sugar", "baking", "plain flour"],
         },
-        "brands": [
-            "Heinz",
-            "Leggo's",
-            "San Remo",
-            "SunRice",
-            "Kellogg's",
-            "Moccona",
-            "Bertolli",
-        ],
+        "brands": ["Heinz", "Leggo's", "San Remo", "SunRice", "Kellogg's", "Moccona", "Bertolli"],
         "units": ["bottle", "packet", "box", "can"],
         "sizes": ["250g", "375g", "500g", "750g", "1kg"],
     },
@@ -142,14 +107,7 @@ CATEGORIES = {
             "Cleaning Spray": ["cleaning spray", "surface spray", "cleaner"],
             "Bin Bags": ["bin bags", "garbage bags", "rubbish bags"],
         },
-        "brands": [
-            "Morning Fresh",
-            "Quilton",
-            "OMO",
-            "Cuddly",
-            "Sorbent",
-            "Spray n' Wipe",
-        ],
+        "brands": ["Morning Fresh", "Quilton", "OMO", "Cuddly", "Sorbent", "Spray n' Wipe"],
         "units": ["bottle", "packet", "roll"],
         "sizes": ["500ml", "1L", "6 pack", "8 pack", "12 pack"],
     },
@@ -229,16 +187,8 @@ CATEGORIES = {
 }
 
 DESCRIPTORS = [
-    "Original",
-    "Classic",
-    "Light",
-    "Extra",
-    "Family Size",
-    "Value",
-    "Premium",
-    "Reduced Fat",
-    "No Added Sugar",
-    "Twin Pack",
+    "Original", "Classic", "Light", "Extra", "Family Size", "Value",
+    "Premium", "Reduced Fat", "No Added Sugar", "Twin Pack",
 ]
 
 
@@ -255,10 +205,8 @@ def generate_products(n=NUM_PRODUCTS):
 
     # cap = total distinct combinations the catalog can produce
     cap = sum(
-        len(spec["subcategories"])
-        * len(spec["brands"])
-        * len(spec["sizes"])
-        * len(DESCRIPTORS)
+        len(spec["subcategories"]) * len(spec["brands"])
+        * len(spec["sizes"]) * len(DESCRIPTORS)
         for spec in CATEGORIES.values()
     )
     if n > cap:
@@ -280,52 +228,45 @@ def generate_products(n=NUM_PRODUCTS):
 
         key = (brand, descriptor, subcat, size)
         if key in seen:
-            continue  # duplicate combination, skip
+            continue                       # duplicate combination, skip
         seen.add(key)
 
-        products.append(
-            {
-                "name": f"{brand} {descriptor} {subcat} {size}",
-                "brand": brand,
-                "category": cat,
-                "subcategory": subcat,
-                "aliases": spec["subcategories"][subcat],
-                "size": size,
-                "unit": random.choice(spec["units"]),
-                "price": round(random.uniform(1.5, 24.0), 2),
-                "in_stock": random.random() > 0.05,
-                # placeholder — overwritten by compute_popularity() from real
-                # order history once orders exist. See seed().
-                "popularity_score": 0,
-            }
-        )
+        products.append({
+            "name": f"{brand} {descriptor} {subcat} {size}",
+            "brand": brand,
+            "category": cat,
+            "subcategory": subcat,
+            "aliases": spec["subcategories"][subcat],
+            "size": size,
+            "unit": random.choice(spec["units"]),
+            "price": round(random.uniform(1.5, 24.0), 2),
+            "in_stock": random.random() > 0.05,
+            # placeholder — overwritten by compute_popularity() from real
+            # order history once orders exist. See seed().
+            "popularity_score": 0,
+        })
     return products
 
 
 def generate_customers(n=NUM_CUSTOMERS):
     """Build n customer documents with consent records."""
     from faker import Faker
-
     fake = Faker("en_AU")
     customers = []
     methods = ["in-store signup", "loyalty card registration", "online account"]
     for _ in range(n):
-        consent_date = datetime.now(timezone.utc) - timedelta(
-            days=random.randint(30, 900)
-        )
-        customers.append(
-            {
-                "name": fake.name(),
-                "phone": "+614" + "".join(str(random.randint(0, 9)) for _ in range(8)),
-                "do_not_call": random.random() < 0.06,  # a few opted out
-                "consent": {
-                    "given": True,
-                    "date": consent_date,
-                    "method": random.choice(methods),
-                },
-                "preferred_language": "en",
-            }
-        )
+        consent_date = datetime.now(timezone.utc) - timedelta(days=random.randint(30, 900))
+        customers.append({
+            "name": fake.name(),
+            "phone": "+614" + "".join(str(random.randint(0, 9)) for _ in range(8)),
+            "do_not_call": random.random() < 0.06,   # a few opted out
+            "consent": {
+                "given": True,
+                "date": consent_date,
+                "method": random.choice(methods),
+            },
+            "preferred_language": "en",
+        })
     return customers
 
 
@@ -334,28 +275,21 @@ def generate_order_history(customers, products):
     brand-inference can filter at the right grain ("chips", not "snacks")."""
     history = []
     for customer in customers:
-        for _ in range(random.randint(1, 6)):  # 1-6 past orders each
-            order_date = datetime.now(timezone.utc) - timedelta(
-                days=random.randint(1, 365)
-            )
+        for _ in range(random.randint(1, 6)):       # 1-6 past orders each
+            order_date = datetime.now(timezone.utc) - timedelta(days=random.randint(1, 365))
             chosen = random.sample(products, random.randint(1, 5))
-            items = [
-                {
-                    "product_id": p["_id"],
-                    "name": p["name"],
-                    "category": p["category"],
-                    "subcategory": p["subcategory"],
-                    "quantity": random.randint(1, 4),
-                }
-                for p in chosen
-            ]
-            history.append(
-                {
-                    "customer_id": customer["_id"],
-                    "date": order_date,
-                    "items": items,
-                }
-            )
+            items = [{
+                "product_id": p["_id"],
+                "name": p["name"],
+                "category": p["category"],
+                "subcategory": p["subcategory"],
+                "quantity": random.randint(1, 4),
+            } for p in chosen]
+            history.append({
+                "customer_id": customer["_id"],
+                "date": order_date,
+                "items": items,
+            })
     return history
 
 
@@ -405,7 +339,8 @@ def compute_brand_popularity(history, products):
         { category, subcategory, brand, score, buyer_count }.
     """
     # product_id -> (category, subcategory, brand) lookup
-    info = {p["_id"]: (p["category"], p["subcategory"], p["brand"]) for p in products}
+    info = {p["_id"]: (p["category"], p["subcategory"], p["brand"])
+            for p in products}
 
     # (subcategory, brand) -> set of customer_ids; remember category too
     buyers: dict = {}
@@ -430,34 +365,24 @@ def compute_brand_popularity(history, products):
     for (subcategory, brand), custs in buyers.items():
         count = len(custs)
         top = top_in_subcat[subcategory]
-        docs.append(
-            {
-                "category": cat_of[(subcategory, brand)],
-                "subcategory": subcategory,
-                "brand": brand,
-                "score": max(1, round(count / top * 100)),
-                "buyer_count": count,
-            }
-        )
+        docs.append({
+            "category": cat_of[(subcategory, brand)],
+            "subcategory": subcategory,
+            "brand": brand,
+            "score": max(1, round(count / top * 100)),
+            "buyer_count": count,
+        })
     return docs
 
 
 def create_indexes(db):
     """Indexes that the search and history-lookup endpoints depend on."""
-    db.products.create_index(
-        [
-            ("name", TEXT),
-            ("aliases", TEXT),
-            ("category", TEXT),
-            ("subcategory", TEXT),
-        ],
-        name="product_text_search",
-    )
+    db.products.create_index([
+        ("name", TEXT), ("aliases", TEXT), ("category", TEXT), ("subcategory", TEXT),
+    ], name="product_text_search")
     db.products.create_index([("category", ASCENDING), ("popularity_score", ASCENDING)])
     db.customers.create_index([("phone", ASCENDING)], unique=True)
-    db.order_history.create_index(
-        [("customer_id", ASCENDING), ("items.subcategory", ASCENDING)]
-    )
+    db.order_history.create_index([("customer_id", ASCENDING), ("items.subcategory", ASCENDING)])
     db.brand_popularity.create_index([("subcategory", ASCENDING), ("score", ASCENDING)])
     db.captured_orders.create_index([("customer_id", ASCENDING)])
     db.captured_orders.create_index([("created_at", ASCENDING)])
@@ -466,17 +391,12 @@ def create_indexes(db):
 def seed(db):
     """Wipe and reseed all collections. Returns a summary dict."""
     print("WARNING: wiping existing collections in", db.name)
-    for coll in (
-        "products",
-        "customers",
-        "order_history",
-        "captured_orders",
-        "brand_popularity",
-    ):
+    for coll in ("products", "customers", "order_history",
+                 "captured_orders", "brand_popularity"):
         db[coll].drop()
 
     products = generate_products()
-    db.products.insert_many(products)  # insert_many sets _id in place
+    db.products.insert_many(products)        # insert_many sets _id in place
 
     customers = generate_customers()
     db.customers.insert_many(customers)
@@ -516,9 +436,7 @@ def seed(db):
 def main():
     uri = os.environ.get("MONGODB_URI")
     if not uri:
-        sys.exit(
-            "ERROR: set the MONGODB_URI environment variable to your Atlas connection string."
-        )
+        sys.exit("ERROR: set the MONGODB_URI environment variable to your Atlas connection string.")
     client = MongoClient(uri)
     try:
         client.admin.command("ping")

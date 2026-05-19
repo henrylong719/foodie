@@ -11,7 +11,6 @@ Lookups filter by SUBCATEGORY ("Potato Chips"), not category ("Snacks"), so
 
 Kept HTTP-free so it can be unit-tested directly.
 """
-
 from bson import ObjectId
 from bson.errors import InvalidId
 from motor.motor_asyncio import AsyncIOMotorDatabase
@@ -49,27 +48,23 @@ async def get_history(
     if oid is None:
         return []
 
-    orders = (
-        await db.order_history.find({"customer_id": oid})
-        .sort("date", -1)
-        .to_list(length=200)
-    )
+    orders = await db.order_history.find(
+        {"customer_id": oid}
+    ).sort("date", -1).to_list(length=200)
 
     items: list[dict] = []
     for order in orders:
         for item in order.get("items", []):
             if subcategory and item.get("subcategory") != subcategory:
                 continue
-            items.append(
-                {
-                    "product_id": str(item["product_id"]),
-                    "name": item["name"],
-                    "category": item["category"],
-                    "subcategory": item["subcategory"],
-                    "quantity": item["quantity"],
-                    "ordered_at": order["date"],
-                }
-            )
+            items.append({
+                "product_id": str(item["product_id"]),
+                "name": item["name"],
+                "category": item["category"],
+                "subcategory": item["subcategory"],
+                "quantity": item["quantity"],
+                "ordered_at": order["date"],
+            })
             if len(items) >= limit:
                 return items
     return items
