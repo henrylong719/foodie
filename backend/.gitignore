@@ -1,0 +1,9 @@
+# Python
+__pycache__/
+*.pyc
+
+# Environment
+.env
+.venv/
+
+# Note: uv.lock IS committed — it pins exact versions for reproducible installs.
