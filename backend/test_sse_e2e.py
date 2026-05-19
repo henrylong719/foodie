@@ -4,8 +4,8 @@ Boots the FastAPI app with uvicorn, opens an SSE connection to
 /calls/{id}/stream, POSTs transcript webhooks, and asserts they arrive on
 the stream. This is the test that proves live transcripts actually work.
 
-mongomock is patched in for the DB (the transcript path does not touch it,
-but the app's lifespan needs a connection).
+A tiny async DB double is patched in so the app can start without Atlas while
+the transcript persistence call still has a Motor-shaped object to await.
 """
 
 import asyncio
@@ -15,18 +15,26 @@ import threading
 import time
 
 import httpx
-import mongomock
 import uvicorn
 
 import app.db as db_module
 
 # --- patch the DB so the app can start without Atlas ---
-_mock = mongomock.MongoClient()
+class _FakeCalls:
+    async def update_one(self, *args, **kwargs):
+        return None
+
+
+class _FakeDb:
+    calls = _FakeCalls()
+
+
+_mock_db = _FakeDb()
 
 
 async def _fake_connect():
-    db_module._state.client = _mock
-    db_module._state.db = _mock["test"]
+    db_module._state.client = object()
+    db_module._state.db = _mock_db
 
 
 async def _fake_disconnect():

@@ -96,3 +96,44 @@ async def get_top_brand(
         "subcategory": doc["subcategory"],
         "score": doc["score"],
     }
+
+
+async def get_top_brands(
+    db: AsyncIOMotorDatabase,
+    subcategory: str,
+    limit: int = 3,
+) -> list[dict]:
+    """Return the most popular brands for a subcategory, best first."""
+    docs = await db.brand_popularity.find(
+        {"subcategory": subcategory},
+    ).sort("score", -1).to_list(length=limit)
+    return [
+        {
+            "brand": doc["brand"],
+            "subcategory": doc["subcategory"],
+            "score": doc["score"],
+        }
+        for doc in docs
+    ]
+
+
+async def list_available_brands(
+    db: AsyncIOMotorDatabase,
+    subcategory: str,
+    limit: int = 5,
+) -> list[str]:
+    """List stocked brands for a subcategory in product-rank order."""
+    candidates = await search_products(db, subcategory, limit=100)
+    brands: list[str] = []
+    seen: set[str] = set()
+    for product in candidates:
+        if not product.get("in_stock", False):
+            continue
+        brand = product.get("brand")
+        if not isinstance(brand, str) or brand in seen:
+            continue
+        seen.add(brand)
+        brands.append(brand)
+        if len(brands) >= limit:
+            break
+    return brands

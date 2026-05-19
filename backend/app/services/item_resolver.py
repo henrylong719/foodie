@@ -16,6 +16,8 @@ Decision tree:
      c. A popular brand exists for the subcategory  -> RECOMMEND (popularity)
      d. Nothing to go on                            -> ASK
 """
+import re
+
 from motor.motor_asyncio import AsyncIOMotorDatabase
 
 from app.services import customer_history, resolution
@@ -26,6 +28,52 @@ CONFIRM = "confirm"        # propose a product, agent must confirm
 RECOMMEND = "recommend"    # suggest a brand, agent must confirm
 ASK = "ask"                # nothing to go on, agent must ask
 
+COMMON_BRAND_ALIASES = {
+    "Coca-Cola": {"coke", "coca cola", "coca-cola", "cola"},
+    "Red Bull": {"redbull"},
+}
+
+
+def _normalize_phrase(value: str) -> str:
+    """Normalize spoken text for brand matching."""
+    return " ".join(re.sub(r"[^a-z0-9]+", " ", value.lower()).split())
+
+
+def _brand_aliases(brand: str) -> set[str]:
+    normalized = _normalize_phrase(brand)
+    aliases = {normalized, normalized.replace(" ", "")}
+    aliases.update(_normalize_phrase(alias)
+                   for alias in COMMON_BRAND_ALIASES.get(brand, set()))
+    aliases.update(_normalize_phrase(alias).replace(" ", "")
+                   for alias in COMMON_BRAND_ALIASES.get(brand, set()))
+    return {alias for alias in aliases if alias}
+
+
+def _contains_phrase(text: str, phrase: str) -> bool:
+    return f" {phrase} " in f" {text} "
+
+
+def _remove_phrase(text: str, phrase: str) -> str:
+    pattern = rf"(^| ){re.escape(phrase)}(?= |$)"
+    return " ".join(re.sub(pattern, " ", text).split())
+
+
+def _natural_item_name(brand: str, subcategory: str) -> str:
+    """Short spoken label for a recommended brand/item pair."""
+    return f"{brand} {subcategory.lower()}"
+
+
+def _resolve_brand_name(brand: str, known_brands: set[str]) -> str | None:
+    """Return the stocked brand matching a spoken brand variant."""
+    normalized = _normalize_phrase(brand)
+    if not normalized:
+        return None
+
+    for known_brand in sorted(known_brands, key=len, reverse=True):
+        if normalized in _brand_aliases(known_brand):
+            return known_brand
+    return None
+
 
 def _strip_brands(mention: str, known_brands: set[str]) -> tuple[str, str | None]:
     """Separate a brand name from the rest of the mention.
@@ -34,13 +82,39 @@ def _strip_brands(mention: str, known_brands: set[str]) -> tuple[str, str | None
     alone ("chips") is far more reliable than searching the whole phrase.
     Returns (remaining_text, matched_brand_or_None).
     """
-    text = mention.lower()
-    for brand in known_brands:
-        bl = brand.lower()
-        if bl in text:
-            remaining = text.replace(bl, " ").strip()
-            return (remaining or mention, brand)
+    text = _normalize_phrase(mention)
+    for brand in sorted(known_brands, key=len, reverse=True):
+        aliases = sorted(_brand_aliases(brand), key=len, reverse=True)
+        for alias in aliases:
+            if _contains_phrase(text, alias):
+                remaining = _remove_phrase(text, alias)
+                return (remaining or mention, brand)
     return (mention, None)
+
+
+async def _brand_options(
+    db: AsyncIOMotorDatabase,
+    subcategory: str,
+    limit: int = 3,
+) -> list[str]:
+    """Return a short, ranked brand list the agent can offer if asked."""
+    options: list[str] = []
+    seen: set[str] = set()
+
+    for row in await resolution.get_top_brands(db, subcategory, limit=limit):
+        brand = row["brand"]
+        if brand not in seen:
+            seen.add(brand)
+            options.append(brand)
+
+    for brand in await resolution.list_available_brands(db, subcategory, limit=limit):
+        if brand not in seen:
+            seen.add(brand)
+            options.append(brand)
+        if len(options) >= limit:
+            break
+
+    return options[:limit]
 
 
 async def resolve_item(
@@ -67,6 +141,8 @@ async def resolve_item(
 
     # --- Stage 1: identify the subcategory via product search ---
     candidates = await resolution.search_products(db, search_term, limit=10)
+    if not candidates and named_brand is not None:
+        candidates = await resolution.search_products(db, mention, limit=10)
     if not candidates:
         return {"status": ASK, "mention": mention,
                 "message": f"I couldn't find '{mention}' — could you describe it differently?"}
@@ -98,12 +174,23 @@ async def resolve_item(
         }
 
     # --- Stage 2c: popularity fallback — recommend the top brand ---
+    brand_options = await _brand_options(db, subcategory)
     top_brand = await resolution.get_top_brand(db, subcategory)
     if top_brand is not None:
+        recommended_product = next(
+            (product for product in candidates if product["brand"] == top_brand["brand"]),
+            None,
+        )
+        if recommended_product is not None:
+            recommended_product = {
+                **recommended_product,
+                "name": _natural_item_name(top_brand["brand"], subcategory),
+            }
         return {
             "status": RECOMMEND, "mention": mention,
             "subcategory": subcategory, "brand_source": "recommended",
-            "brand": top_brand["brand"],
+            "brand": top_brand["brand"], "available_brands": brand_options,
+            "product": recommended_product,
             "message": (f"Our most popular {subcategory.lower()} is "
                         f"{top_brand['brand']} — would you like that?"),
         }
@@ -111,6 +198,12 @@ async def resolve_item(
     # --- Stage 2d: nothing to go on — ask ---
     return {
         "status": ASK, "mention": mention, "subcategory": subcategory,
+        "available_brands": brand_options,
+        "next_tool": "resolve_brand",
+        "next_tool_instruction": (
+            "When the customer names a brand for this item, call resolve_brand "
+            "with this subcategory and the customer's brand before asking quantity."
+        ),
         "message": f"Which brand of {subcategory.lower()} would you like?",
     }
 
@@ -129,17 +222,25 @@ async def resolve_brand(
     Returns a dict with status RESOLVED (product found) or ASK (brand not
     stocked in this subcategory).
     """
-    brand = (brand or "").strip()
     candidates = await resolution.search_products(db, subcategory, limit=50)
+    known_brands = {
+        product["brand"]
+        for product in candidates
+        if isinstance(product.get("brand"), str)
+    }
+    resolved_brand = _resolve_brand_name(brand or "", known_brands)
+
     for product in candidates:
-        if product["brand"].lower() == brand.lower():
+        if product["brand"] == resolved_brand:
             return {
                 "status": RESOLVED, "subcategory": subcategory,
                 "brand_source": "mentioned", "product": product,
                 "message": f"Got it — {product['name']}.",
             }
+    brand_options = await _brand_options(db, subcategory)
     return {
         "status": ASK, "subcategory": subcategory,
+        "available_brands": brand_options,
         "message": (f"Sorry, we don't have {brand} in {subcategory.lower()} — "
                     f"is there another brand you'd like?"),
     }

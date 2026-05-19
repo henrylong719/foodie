@@ -52,7 +52,7 @@ _raw.order_history.insert_many([
     {  # oldest — Smith's chips
         "customer_id": CUST, "date": now - timedelta(days=60),
         "items": [{"product_id": ObjectId(), "name": "Smith's Original Potato Chips 150g",
-                   "category": "Snacks", "subcategory": "Potato Chips", "quantity": 2}],
+                   "category": "Snacks", "subcategory": "Chips", "quantity": 2}],
     },
     {  # middle — chocolate (same category, different subcategory)
         "customer_id": CUST, "date": now - timedelta(days=30),
@@ -61,8 +61,8 @@ _raw.order_history.insert_many([
     },
     {  # newest — Doritos chips
         "customer_id": CUST, "date": now - timedelta(days=5),
-        "items": [{"product_id": ObjectId(), "name": "Doritos Cheese Potato Chips 170g",
-                   "category": "Snacks", "subcategory": "Potato Chips", "quantity": 3}],
+        "items": [{"product_id": ObjectId(), "name": "Doritos Cheese Corn Chips 170g",
+                   "category": "Snacks", "subcategory": "Chips", "quantity": 3}],
     },
 ])
 
@@ -78,13 +78,13 @@ async def run():
     print(f"  full history       -> {len(allitems)} items, newest first OK")
 
     # --- 2. subcategory filter must not bleed across subcategories ---
-    chips = await ch.get_history(db, CUST_ID, subcategory="Potato Chips")
+    chips = await ch.get_history(db, CUST_ID, subcategory="Chips")
     assert len(chips) == 2, f"expected 2 chip items, got {len(chips)}"
-    assert all(i["subcategory"] == "Potato Chips" for i in chips)
-    print(f"  'Potato Chips'     -> {len(chips)} items (chocolate excluded)")
+    assert all(i["subcategory"] == "Chips" for i in chips)
+    print(f"  'Chips'            -> {len(chips)} items (chocolate excluded)")
 
     # --- 3. brand inference returns the MOST RECENT in the subcategory ---
-    inferred = await ch.infer_brand_from_history(db, CUST_ID, "Potato Chips")
+    inferred = await ch.infer_brand_from_history(db, CUST_ID, "Chips")
     assert inferred is not None
     assert inferred["name"].startswith("Doritos"), "should infer most recent chips"
     print(f"  infer chips brand  -> {inferred['name']}")

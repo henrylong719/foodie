@@ -18,6 +18,15 @@ class _FakeRequest:
         return self._body
 
 
+class _FakeCalls:
+    async def update_one(self, *args, **kwargs):
+        return None
+
+
+class _FakeDb:
+    calls = _FakeCalls()
+
+
 async def run():
     # --- hub: subscribe / publish / receive ---
     h = EventHub()
@@ -58,7 +67,8 @@ async def run():
             "call": {"id": "call-X"},
         }
     }
-    resp = await calls.vapi_webhook(_FakeRequest(body), db=None)
+    db = _FakeDb()
+    resp = await calls.vapi_webhook(_FakeRequest(body), db=db)
     assert resp == {"received": True}
     line = await asyncio.wait_for(listener.get(), timeout=1)
     assert line["role"] == "customer", "Vapi 'user' must map to 'customer'"
@@ -75,7 +85,7 @@ async def run():
             "call": {"id": "call-X"},
         }
     }
-    await calls.vapi_webhook(_FakeRequest(body), db=None)
+    await calls.vapi_webhook(_FakeRequest(body), db=db)
     line = await asyncio.wait_for(listener.get(), timeout=1)
     assert line["role"] == "assistant"
     print("  assistant transcript -> role preserved")
@@ -90,7 +100,7 @@ async def run():
             "call": {"id": "call-X"},
         }
     }
-    await calls.vapi_webhook(_FakeRequest(body), db=None)
+    await calls.vapi_webhook(_FakeRequest(body), db=db)
     await asyncio.sleep(0.05)
     assert listener.empty(), "partial transcripts must not be published"
     print("  partial transcript   -> correctly dropped")
@@ -104,7 +114,7 @@ async def run():
             "call": {"id": "call-X"},
         }
     }
-    await calls.vapi_webhook(_FakeRequest(body), db=None)
+    await calls.vapi_webhook(_FakeRequest(body), db=db)
     line = await asyncio.wait_for(listener.get(), timeout=1)
     assert line["text"] == "no type field"
     print("  omitted type         -> treated as final")

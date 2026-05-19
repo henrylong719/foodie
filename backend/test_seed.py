@@ -58,6 +58,21 @@ print(f"  unique products: {len(set(names))} / {len(names)} (no duplicates)")
 print(f"  distinct subcategories: {len(db.products.distinct('subcategory'))}")
 print(f"  distinct brands: {len(db.products.distinct('brand'))}")
 
+# brands must stay realistic for subcategories that define explicit mappings
+for product in db.products.find():
+    spec = seed.CATEGORIES[product["category"]]
+    allowed_brands = seed._brands_for_subcategory(spec, product["subcategory"])
+    assert product["brand"] in allowed_brands, (
+        f"{product['brand']} should not appear in {product['subcategory']}"
+    )
+assert db.products.count_documents({
+    "subcategory": "Ice Cream", "brand": "Birds Eye",
+}) == 0, "Birds Eye should not be generated as ice cream"
+assert db.products.count_documents({
+    "subcategory": "Soft Drink", "brand": "Red Bull",
+}) == 0, "Red Bull should not be generated as a soft drink"
+print("  subcategory brand rules: valid")
+
 # popularity must be computed from history, not random
 scores = [p["popularity_score"] for p in db.products.find()]
 assert all(0 <= s <= 100 for s in scores), "scores must be 0-100"
@@ -86,11 +101,11 @@ for doc in bp:
 for subcat, docs in by_subcat.items():
     assert max(d["score"] for d in docs) == 100, f"{subcat}: no top brand at 100"
 # spot-check: top chips brand
-chips_brands = sorted(by_subcat.get("Potato Chips", []),
+chips_brands = sorted(by_subcat.get("Chips", []),
                       key=lambda d: -d["score"])
 if chips_brands:
     top = chips_brands[0]
-    print(f"  top 'Potato Chips' brand: {top['brand']} "
+    print(f"  top 'Chips' brand: {top['brand']} "
           f"(score {top['score']}, {top['buyer_count']} buyers)")
 print(f"  brand_popularity rows: {len(bp)} across {len(by_subcat)} subcategories")
 

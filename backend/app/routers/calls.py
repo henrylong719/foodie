@@ -17,15 +17,22 @@ backend places the outbound call, and Vapi echoes it back here.
 import asyncio
 import json
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
 from motor.motor_asyncio import AsyncIOMotorDatabase
+from pydantic import BaseModel
 
 from app.db import get_db
-from app.services import item_resolver, orders
+from app.services import call_service, item_resolver, orders
 from app.services.event_hub import hub
 
 router = APIRouter(prefix="/calls", tags=["calls"])
+
+
+class PlaceCallRequest(BaseModel):
+    """Body for POST /calls — the dashboard sends the customer to dial."""
+
+    customer_id: str
 
 
 def _extract_customer_id(call: dict) -> str | None:
@@ -79,6 +86,92 @@ async def _dispatch(
     return {"error": f"unknown tool: {name}"}
 
 
+def _as_dict(value: object) -> dict:
+    """Normalize tool arguments from Vapi's possible payload shapes."""
+    if isinstance(value, dict):
+        return value
+    if isinstance(value, str):
+        try:
+            parsed = json.loads(value)
+        except json.JSONDecodeError:
+            return {}
+        return parsed if isinstance(parsed, dict) else {}
+    return {}
+
+
+def _extract_tool_call(tool_call: dict, tool_meta: dict | None = None) -> tuple[str, dict]:
+    """Return (tool name, args) from current and legacy Vapi tool-call shapes."""
+    tool_meta = tool_meta or {}
+    function = tool_call.get("function") if isinstance(tool_call.get("function"), dict) else {}
+    meta_tool_call = (
+        tool_meta.get("toolCall") if isinstance(tool_meta.get("toolCall"), dict) else {}
+    )
+    meta_function = (
+        meta_tool_call.get("function")
+        if isinstance(meta_tool_call.get("function"), dict)
+        else {}
+    )
+
+    name = (
+        tool_call.get("name")
+        or function.get("name")
+        or tool_meta.get("name")
+        or meta_function.get("name")
+    )
+
+    args = (
+        tool_call.get("arguments")
+        or tool_call.get("parameters")
+        or function.get("arguments")
+        or function.get("parameters")
+        or meta_tool_call.get("arguments")
+        or meta_tool_call.get("parameters")
+        or meta_function.get("arguments")
+        or meta_function.get("parameters")
+    )
+    return str(name or ""), _as_dict(args)
+
+
+def _tool_meta_by_call_id(message: dict) -> dict[str, dict]:
+    """Index Vapi's toolWithToolCallList by the nested toolCall id."""
+    index = {}
+    for item in message.get("toolWithToolCallList", []):
+        if not isinstance(item, dict):
+            continue
+        tool_call = item.get("toolCall")
+        if isinstance(tool_call, dict) and tool_call.get("id"):
+            index[str(tool_call["id"])] = item
+    return index
+
+
+def _is_transcript_message(msg_type: str) -> bool:
+    """Vapi may encode final-only filters in the type string itself."""
+    return msg_type == "transcript" or msg_type.startswith("transcript[")
+
+
+def _extract_transcript_type(message: dict, msg_type: str) -> str:
+    """Return Vapi's transcriptType, defaulting to final when omitted."""
+    transcript_type = message.get("transcriptType") or message.get("transcript_type")
+    if isinstance(transcript_type, str) and transcript_type:
+        return transcript_type
+
+    _, bracket, rest = msg_type.partition("[")
+    if not bracket:
+        return "final"
+
+    attrs, _, _ = rest.partition("]")
+    for part in attrs.split(","):
+        key, sep, value = part.partition("=")
+        if sep and key.strip() == "transcriptType":
+            return value.strip().strip("\"'")
+    return "final"
+
+
+def _extract_call_id(message: dict) -> str:
+    call = message.get("call") if isinstance(message.get("call"), dict) else {}
+    return str(call.get("id") or message.get("callId") or "")
+
+
 @router.post("/webhook")
 async def vapi_webhook(
     request: Request,
@@ -90,11 +183,11 @@ async def vapi_webhook(
     msg_type = message.get("type", "")
 
     # --- transcript events: relay final transcripts to live dashboards ---
-    if msg_type == "transcript":
-        call_id = message.get("call", {}).get("id", "")
+    if _is_transcript_message(msg_type):
+        call_id = _extract_call_id(message)
         # Vapi defaults transcriptType to "final" when omitted. Forward only
         # final lines — partials get superseded and would flicker the UI.
-        if message.get("transcriptType", "final") == "final":
+        if _extract_transcript_type(message, msg_type) == "final":
             role = message.get("role", "")
             # frontend expects "customer"/"assistant"; Vapi sends "user"/"assistant"
             line = {
@@ -103,6 +196,31 @@ async def vapi_webhook(
                 "ts": message.get("timestamp") or 0,
             }
             if call_id and line["text"]:
+                await call_service.append_transcript_line(db, call_id, line)
+                await hub.publish(call_id, line)
+        return {"received": True}
+
+    if msg_type == "status-update":
+        call_id = _extract_call_id(message)
+        status = message.get("status")
+        if call_id and status:
+            await call_service.update_call_from_provider(
+                db, call_id, {"status": status}
+            )
+        return {"received": True}
+
+    if msg_type == "end-of-call-report":
+        call_id = _extract_call_id(message)
+        if call_id:
+            provider_call = {
+                "artifact": message.get("artifact") or {},
+                "status": "ended",
+                "endedReason": message.get("endedReason"),
+            }
+            update = await call_service.update_call_from_provider(
+                db, call_id, provider_call
+            )
+            for line in update.get("transcript", []):
                 await hub.publish(call_id, line)
         return {"received": True}
 
@@ -115,11 +233,17 @@ async def vapi_webhook(
     customer_id = _extract_customer_id(call)
 
     results = []
+    tool_meta = _tool_meta_by_call_id(message)
     for tool_call in message.get("toolCallList", []):
+        if not isinstance(tool_call, dict):
+            continue
+        name, args = _extract_tool_call(
+            tool_call, tool_meta.get(str(tool_call.get("id", "")))
+        )
         result = await _dispatch(
             db,
-            tool_call.get("name", ""),
-            tool_call.get("arguments", {}) or {},
+            name,
+            args,
             customer_id,
             call_id,
         )
@@ -131,6 +255,51 @@ async def vapi_webhook(
         )
 
     return {"results": results}
+
+
+@router.post("")
+async def place_call(
+    body: PlaceCallRequest,
+    db: AsyncIOMotorDatabase = Depends(get_db),
+):
+    """Place an outbound call to a customer.
+
+    This is Phase 5's entry point. The compliance gate runs first: a
+    do-not-call customer or a call outside permitted hours is refused with
+    HTTP 409 and a structured reason the dashboard can display. Otherwise
+    the call is placed via Vapi (or simulated, in dry-run mode) and the new
+    call's id is returned for the live-call view to subscribe to.
+    """
+    result = await call_service.place_outbound_call(db, body.customer_id)
+
+    # invalid id / unknown customer — a client error
+    if not result.get("ok") and not result.get("blocked"):
+        if result.get("error") in ("invalid customer_id", "customer not found"):
+            raise HTTPException(status_code=404, detail=result["error"])
+        # Vapi rejected it or config is incomplete — upstream/config failure
+        raise HTTPException(status_code=502, detail=result.get("error", "call failed"))
+
+    # blocked by the compliance gate — 409 Conflict, with the reason
+    if result.get("blocked"):
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "message": "Call blocked by compliance gate.",
+                "compliance": result["compliance"],
+            },
+        )
+
+    return result
+
+
+@router.get("")
+async def list_calls(
+    limit: int = Query(50, ge=1, le=200),
+    db: AsyncIOMotorDatabase = Depends(get_db),
+):
+    """List recent call records, most recent first."""
+    items = await call_service.list_calls(db, limit)
+    return {"count": len(items), "calls": items}
 
 
 @router.get("/{call_id}/stream")
@@ -166,3 +335,19 @@ async def call_transcript_stream(call_id: str):
             "X-Accel-Buffering": "no",  # disable proxy buffering
         },
     )
+
+
+@router.get("/{vapi_call_id}")
+async def get_call(
+    vapi_call_id: str,
+    db: AsyncIOMotorDatabase = Depends(get_db),
+):
+    """Fetch one call record by its Vapi call id.
+
+    Declared after /{call_id}/stream so the two-segment streaming route is
+    matched first; this single-segment route never shadows it.
+    """
+    doc = await call_service.get_call(db, vapi_call_id)
+    if doc is None:
+        raise HTTPException(status_code=404, detail="Call not found")
+    return doc

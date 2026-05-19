@@ -35,7 +35,7 @@ NUM_CUSTOMERS = 50
 CATEGORIES = {
     "Snacks": {
         "subcategories": {
-            "Potato Chips": ["chips", "crisps", "potato chips", "hot chips"],
+            "Chips": ["chips", "crisps", "potato chips", "corn chips", "tortilla chips", "hot chips"],
             "Crackers": ["crackers", "savoury biscuits", "water crackers"],
             "Chocolate": ["chocolate", "choccy", "chocolate bar", "block chocolate"],
             "Nuts": ["nuts", "mixed nuts", "snack nuts", "salted nuts"],
@@ -43,12 +43,18 @@ CATEGORIES = {
             "Muesli Bars": ["muesli bars", "snack bars", "lunch box bars"],
         },
         "brands": ["Smith's", "Doritos", "Arnott's", "Cadbury", "Nobby's", "The Natural Confectionery Co"],
+        "subcategory_brands": {
+            "Chips": ["Smith's", "Doritos", "Nobby's"],
+        },
         "units": ["packet"],
-        "sizes": ["100g", "150g", "175g", "200g", "250g"],
+        "sizes": ["100g", "150g", "170g", "175g", "200g", "250g"],
     },
     "Beverages": {
         "subcategories": {
-            "Soft Drink": ["soft drink", "soda", "fizzy drink", "pop", "coke"],
+            "Soft Drink": [
+                "soft drink", "soda", "fizzy drink", "pop", "coke", "cola",
+                "coca cola", "coca-cola",
+            ],
             "Juice": ["juice", "fruit juice", "orange juice", "apple juice"],
             "Water": ["water", "bottled water", "spring water", "sparkling water"],
             "Coffee": ["coffee", "instant coffee", "ground coffee", "coffee beans"],
@@ -56,6 +62,14 @@ CATEGORIES = {
             "Energy Drink": ["energy drink", "energy", "sports drink"],
         },
         "brands": ["Coca-Cola", "Schweppes", "Golden Circle", "Mount Franklin", "Nescafe", "Lipton", "Red Bull"],
+        "subcategory_brands": {
+            "Soft Drink": ["Coca-Cola", "Schweppes"],
+            "Juice": ["Golden Circle"],
+            "Water": ["Mount Franklin"],
+            "Coffee": ["Nescafe"],
+            "Tea": ["Lipton"],
+            "Energy Drink": ["Red Bull"],
+        },
         "units": ["bottle", "can"],
         "sizes": ["375ml", "600ml", "1L", "1.25L", "2L"],
     },
@@ -95,6 +109,13 @@ CATEGORIES = {
             "Frozen Meals": ["frozen meals", "ready meals", "microwave meals"],
         },
         "brands": ["Streets", "Bulla", "Birds Eye", "McCain", "Peters", "Lean Cuisine"],
+        "subcategory_brands": {
+            "Ice Cream": ["Streets", "Bulla", "Peters"],
+            "Frozen Vegetables": ["Birds Eye", "McCain"],
+            "Frozen Pizza": ["McCain"],
+            "Frozen Chips": ["McCain", "Birds Eye"],
+            "Frozen Meals": ["Lean Cuisine", "McCain"],
+        },
         "units": ["tub", "packet", "box", "each"],
         "sizes": ["375g", "500g", "1L", "1kg", "2L"],
     },
@@ -192,6 +213,17 @@ DESCRIPTORS = [
 ]
 
 
+def _brands_for_subcategory(spec, subcategory):
+    return spec.get("subcategory_brands", {}).get(subcategory, spec["brands"])
+
+
+def _product_name(brand, descriptor, subcategory, size):
+    if subcategory == "Chips":
+        chip_type = "Corn Chips" if brand == "Doritos" else "Potato Chips"
+        return f"{brand} {descriptor} {chip_type} {size}"
+    return f"{brand} {descriptor} {subcategory} {size}"
+
+
 def generate_products(n=NUM_PRODUCTS):
     """Build n unique product documents spread across the catalog.
 
@@ -205,8 +237,10 @@ def generate_products(n=NUM_PRODUCTS):
 
     # cap = total distinct combinations the catalog can produce
     cap = sum(
-        len(spec["subcategories"]) * len(spec["brands"])
-        * len(spec["sizes"]) * len(DESCRIPTORS)
+        sum(
+            len(_brands_for_subcategory(spec, subcat))
+            for subcat in spec["subcategories"]
+        ) * len(spec["sizes"]) * len(DESCRIPTORS)
         for spec in CATEGORIES.values()
     )
     if n > cap:
@@ -222,7 +256,7 @@ def generate_products(n=NUM_PRODUCTS):
         i += 1
         spec = CATEGORIES[cat]
         subcat = random.choice(list(spec["subcategories"].keys()))
-        brand = random.choice(spec["brands"])
+        brand = random.choice(_brands_for_subcategory(spec, subcat))
         size = random.choice(spec["sizes"])
         descriptor = random.choice(DESCRIPTORS)
 
@@ -232,7 +266,7 @@ def generate_products(n=NUM_PRODUCTS):
         seen.add(key)
 
         products.append({
-            "name": f"{brand} {descriptor} {subcat} {size}",
+            "name": _product_name(brand, descriptor, subcat, size),
             "brand": brand,
             "category": cat,
             "subcategory": subcat,
@@ -253,12 +287,17 @@ def generate_customers(n=NUM_CUSTOMERS):
     from faker import Faker
     fake = Faker("en_AU")
     customers = []
+    phones = set()
     methods = ["in-store signup", "loyalty card registration", "online account"]
-    for _ in range(n):
+    while len(customers) < n:
         consent_date = datetime.now(timezone.utc) - timedelta(days=random.randint(30, 900))
+        phone = "+614" + "".join(str(random.randint(0, 9)) for _ in range(8))
+        if phone in phones:
+            continue
+        phones.add(phone)
         customers.append({
             "name": fake.name(),
-            "phone": "+614" + "".join(str(random.randint(0, 9)) for _ in range(8)),
+            "phone": phone,
             "do_not_call": random.random() < 0.06,   # a few opted out
             "consent": {
                 "given": True,
