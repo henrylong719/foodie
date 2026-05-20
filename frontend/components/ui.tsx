@@ -29,6 +29,8 @@ export function StatusBadge({
       "text-[var(--color-good)] border-[color:rgba(21,128,61,0.2)] bg-[color:rgba(21,128,61,0.08)]",
     confirmed:
       "text-[var(--color-good)] border-[color:rgba(21,128,61,0.2)] bg-[color:rgba(21,128,61,0.08)]",
+    ended:
+      "text-[var(--color-good)] border-[color:rgba(21,128,61,0.2)] bg-[color:rgba(21,128,61,0.08)]",
     fulfilled:
       "text-[var(--color-good)] border-[color:rgba(21,128,61,0.2)] bg-[color:rgba(21,128,61,0.08)]",
     in_stock:
@@ -39,8 +41,14 @@ export function StatusBadge({
       "text-[var(--color-warn)] border-[color:rgba(184,107,23,0.22)] bg-[color:rgba(184,107,23,0.08)]",
     pending_fulfilment:
       "text-[var(--color-warn)] border-[color:rgba(184,107,23,0.22)] bg-[color:rgba(184,107,23,0.08)]",
+    pending_fulfillment:
+      "text-[var(--color-warn)] border-[color:rgba(184,107,23,0.22)] bg-[color:rgba(184,107,23,0.08)]",
+    queued:
+      "text-[var(--color-warn)] border-[color:rgba(184,107,23,0.22)] bg-[color:rgba(184,107,23,0.08)]",
     waiting:
       "text-[var(--color-warn)] border-[color:rgba(184,107,23,0.22)] bg-[color:rgba(184,107,23,0.08)]",
+    blocked:
+      "text-[var(--color-danger)] border-[color:rgba(194,65,58,0.22)] bg-[color:rgba(194,65,58,0.07)]",
     cancelled:
       "text-[var(--color-danger)] border-[color:rgba(194,65,58,0.22)] bg-[color:rgba(194,65,58,0.07)]",
     do_not_call:

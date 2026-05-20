@@ -149,12 +149,13 @@ async def run():
     assert r["product"]["brand"] == "Smith's"
     print(f"  'Smith's chips'  -> {r['status']} (explicit brand beats history)")
 
-    # --- spoken brand variants should canonicalize before fallback ranking ---
+    # --- generic "Coke" should identify the item class, not force Coca-Cola ---
     r = await ir.resolve_item(db, "Coke", NEW_CUST)
-    assert r["status"] == RESOLVED, f"expected RESOLVED, got {r['status']}"
-    assert r["product"]["brand"] == "Coca-Cola"
+    assert r["status"] == RECOMMEND, f"expected RECOMMEND, got {r['status']}"
+    assert r["brand"] == "Coca-Cola"
     assert r["subcategory"] == "Soft Drink"
-    print(f"  'Coke'           -> {r['status']}: {r['product']['name']}")
+    assert r["brand_source"] == "recommended"
+    print(f"  'Coke'           -> {r['status']} (generic soft drink request)")
 
     r = await ir.resolve_brand(db, "Soft Drink", "Coca Cola")
     assert r["status"] == RESOLVED, f"expected RESOLVED, got {r['status']}"
@@ -162,9 +163,9 @@ async def run():
     print(f"  'Coca Cola'      -> {r['status']} (hyphen-insensitive)")
 
     r = await ir.resolve_brand(db, "Soft Drink", "Coke")
-    assert r["status"] == RESOLVED, f"expected RESOLVED, got {r['status']}"
-    assert r["product"]["brand"] == "Coca-Cola"
-    print(f"  'Coke' brand     -> {r['status']} (alias-insensitive)")
+    assert r["status"] == ASK, f"expected ASK, got {r['status']}"
+    assert "product" not in r
+    print(f"  'Coke' brand     -> {r['status']} (ambiguous brand answer)")
 
     r = await ir.resolve_item(db, "Smiths chips", CUST_ID)
     assert r["status"] == RESOLVED, "apostrophe-free brand should resolve"

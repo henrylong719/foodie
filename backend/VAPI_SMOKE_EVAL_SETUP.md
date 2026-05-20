@@ -104,6 +104,8 @@ Use exact expected-tool-call validation only for deterministic arguments:
 
 - `resolve_brand.subcategory`
 - `resolve_brand.brand` when the spoken brand is explicit
+- `resolve_item.mention` when the workflow requires one exact short mention,
+  such as `Coke`
 - `flag_do_not_call` with no arguments
 
 Use this LLM-as-a-judge template for `resolve_item` tool-call checkpoints.
@@ -177,6 +179,9 @@ Pass criteria:
 - The last assistant message calls the save_order tool.
 - The save_order call includes exactly the expected order items listed below.
 - Each expected item has the correct product_id, quantity, and brand_source.
+- In the conversation context, the customer explicitly approved the most
+  recent full recap before this save_order call. Approval must be a response to
+  the recap, such as "yes", "correct", or "that's right".
 
 Expected order items:
 - [paste expected product_id, quantity, and brand_source rows from the case]
@@ -186,6 +191,9 @@ Fail criteria:
 - The save_order call is missing any expected item.
 - The save_order call includes an extra item not approved in the recap.
 - Any expected item's product_id, quantity, or brand_source is wrong.
+- The assistant calls save_order after the customer only says there are no
+  more items, such as "that's everything" or "no more", before the assistant
+  has read a full recap and received explicit approval.
 
 Output format: respond with exactly one word: pass or fail
 - No explanations
@@ -231,10 +239,10 @@ after the assistant actually calls `save_order`.
 | SMK-04 | `prod-smiths-chips-150g`, quantity `2`, brand_source `mentioned` |
 | SMK-05 | `prod-smiths-chips-150g`, quantity `1`, brand_source `mentioned` |
 | SMK-06 | `prod-pauls-milk-2l`, quantity `1`, brand_source `mentioned` |
-| SMK-07 | `prod-coke-125l`, quantity `2`, brand_source `mentioned` |
+| SMK-07 | `prod-coke-125l`, quantity `2`, brand_source `recommended` |
 | SMK-08 | `prod-smiths-chips-150g`, quantity `2`, brand_source `mentioned` |
 | SMK-09 | `prod-doritos-chips-170g`, quantity `3`, brand_source `mentioned`; `prod-pauls-milk-2l`, quantity `1`, brand_source `mentioned` |
-| SMK-10 | `prod-doritos-chips-170g`, quantity `2`, brand_source `mentioned`; `prod-coke-125l`, quantity `1`, brand_source `mentioned`; `prod-pauls-milk-2l`, quantity `3`, brand_source `mentioned` |
+| SMK-10 | `prod-doritos-chips-170g`, quantity `2`, brand_source `mentioned`; `prod-coke-125l`, quantity `1`, brand_source `recommended`; `prod-pauls-milk-2l`, quantity `3`, brand_source `mentioned` |
 | SMK-13 | `prod-smiths-chips-150g`, quantity `1`, brand_source `history` |
 
 ## SMK-01 Basic Happy Path With Explicit Brand
@@ -876,28 +884,57 @@ Goal: the assistant should not silently interpret vague quantity language.
 2. `Assistant`: asks what the customer wants.
 3. `User`: `I need Coke.`
 4. `Assistant`: add a `resolve_item` LLM-as-a-judge checkpoint for the
-   customer request `Coke`. Paste `COKE_RESOLVED` only after the assistant
+   customer request `Coke`. Paste `COKE_RECOMMENDED` only after the assistant
    actually calls `resolve_item`.
-5. `Tool Response`: paste `COKE_RESOLVED`.
-6. `Assistant`: asks quantity.
-7. `User`: `A couple.`
-8. `Assistant`: asks for a specific number.
-9. `User`: `Two.`
-10. `Assistant`: asks anything else.
-11. `User`: `That's it.`
-12. `Assistant`: recaps.
-13. `User`: `Yes.`
-14. `Assistant`: add the save-order LLM judge checkpoint using the expected
+5. `Tool Response`: paste `COKE_RECOMMENDED`.
+6. `Assistant`: recommends Coca-Cola and asks if that is okay.
+7. `User`: `Yes.`
+8. `Assistant`: asks quantity.
+9. `User`: `A couple.`
+10. `Assistant`: add the vague-quantity LLM judge checkpoint from Tool
+    Validation below. It must pass only if the assistant asks for a specific
+    number instead of treating `a couple` as quantity 2.
+11. `User`: `Two.`
+12. `Assistant`: asks anything else.
+13. `User`: `That's it.`
+14. `Assistant`: add the recap LLM judge checkpoint from Tool Validation
+    below. This turn should pass only if the assistant recaps the Coca-Cola
+    soft drink order with quantity 2 and asks the customer to confirm.
+15. `User`: `Yes.`
+16. `Assistant`: add the save-order LLM judge checkpoint using the expected
     SMK-07 item row from the Save Order Expectations table.
-15. `Tool Response`: paste `ORDER_SAVED`.
-16. `Assistant`: evaluated final checkpoint.
+17. `Tool Response`: paste `ORDER_SAVED`.
+18. `Assistant`: evaluated final checkpoint.
+
+Do not paste `ORDER_SAVED` immediately after the recap in step 14. The recap is
+not a tool call. First add the user's confirmation in step 15, then add the
+step 16 assistant checkpoint and wait for the assistant to initiate
+`save_order`. Paste `ORDER_SAVED` only after that tool call exists.
+
+In Vapi, step 15 must be a `User` turn containing `Yes`. It is not a
+`Tool Response` turn.
+
+The final turns in Vapi should be configured exactly like this:
+
+| Turn | Role | Mock | Evaluation | Approach | Content |
+| --- | --- | --- | --- | --- | --- |
+| 13 | User | on | off | n/a | `That's it.` |
+| 14 | Assistant | off | on | LLM-as-a-judge | Use the step 14 recap judge prompt below. |
+| 15 | User | on | off | n/a | `Yes` |
+| 16 | Assistant | off | on | LLM-as-a-judge | Use the shared save-order judge template with the SMK-07 expected item below. |
+| 17 | Tool Response | on | off | n/a | Paste `ORDER_SAVED` only if turn 16 initiated `save_order`. |
+| 18 | Assistant | off | on | LLM-as-a-judge | Use the final closing judge prompt. |
+
+If turn 14 passes with a recap like `two bottles of Coca-Cola soft drink. Is
+that all correct?`, the next turn is still the user confirmation, not
+`ORDER_SAVED`.
 
 ### Mock Tool Responses
 
-`COKE_RESOLVED`
+`COKE_RECOMMENDED`
 
 ```json
-{"status":"resolved","mention":"Coke","subcategory":"Soft Drink","brand_source":"mentioned","product":{"_id":"prod-coke-125l","name":"Coca-Cola Classic Soft Drink","brand":"Coca-Cola","category":"Beverages","subcategory":"Soft Drink","size":"1.25L","unit":"bottle"},"message":"Got it — Coca-Cola Classic Soft Drink."}
+{"status":"recommend","mention":"Coke","subcategory":"Soft Drink","brand_source":"recommended","brand":"Coca-Cola","available_brands":["Coca-Cola","Schweppes"],"product":{"_id":"prod-coke-125l","name":"Coca-Cola soft drink","brand":"Coca-Cola","category":"Beverages","subcategory":"Soft Drink","size":"1.25L","unit":"bottle"},"message":"Our most popular soft drink is Coca-Cola — would you like that?"}
 ```
 
 `ORDER_SAVED`
@@ -905,6 +942,97 @@ Goal: the assistant should not silently interpret vague quantity language.
 ```json
 {"ok":true,"order_id":"order-smk-07"}
 ```
+
+### Tool Validation
+
+For step 10, add an `Assistant` turn in Vapi with:
+
+- `Mock`: off
+- `Evaluation`: on
+- `Approach`: `LLM-as-a-judge`
+
+Use this exact judge prompt:
+
+```text
+You are an LLM-Judge. Evaluate ONLY the last assistant message in the mock conversation: {{messages[-1]}}.
+Context is available in {{messages}}, but your judgment must focus on the last assistant message.
+
+Decision rule:
+- PASS if ALL "pass criteria" are satisfied AND NONE of the "fail criteria" are triggered.
+- Otherwise FAIL.
+
+Pass criteria:
+- The customer's latest message is the vague quantity phrase "A couple."
+- The last assistant message asks the customer to give a specific numeric quantity.
+- The last assistant message keeps the active item as the recommended Coca-Cola soft drink.
+- The last assistant message does not add the item to the order yet.
+
+Fail criteria:
+- The last assistant message treats "a couple" as exactly 2 without asking for confirmation or clarification.
+- The last assistant message says or implies the quantity has already been captured as 2.
+- The last assistant message asks whether anything else is needed.
+- The last assistant message recaps the order or moves toward saving.
+- The last assistant message switches to a different item.
+
+Important domain rule:
+- For this ordering assistant, "a couple" is considered vague quantity language, not a reliable exact number. The assistant must ask for a specific number. Do not fail the assistant for asking clarification.
+
+Output format: respond with exactly one word: pass or fail
+- No explanations
+- No punctuation
+- No additional text
+```
+
+For step 14, add an `Assistant` turn in Vapi with:
+
+- `Mock`: off
+- `Evaluation`: on
+- `Approach`: `LLM-as-a-judge`
+
+Use this exact judge prompt:
+
+```text
+You are an LLM-Judge. Evaluate ONLY the last assistant message in the mock conversation: {{messages[-1]}}.
+Context is available in {{messages}}, but your judgment must focus on the last assistant message.
+
+Decision rule:
+- PASS if ALL "pass criteria" are satisfied AND NONE of the "fail criteria" are triggered.
+- Otherwise FAIL.
+
+Pass criteria:
+- The customer has just said they are done ordering.
+- The last assistant message recaps exactly one item: Coca-Cola soft drink.
+- The recap includes quantity 2.
+- The last assistant message asks the customer to confirm whether the recap is correct.
+- The last assistant message does not call a tool.
+
+Fail criteria:
+- The last assistant message calls save_order before the customer confirms the recap.
+- The last assistant message omits the item, omits the quantity, or recaps the wrong item.
+- The last assistant message asks for more items instead of recapping.
+- The last assistant message says the order has already been saved.
+
+Output format: respond with exactly one word: pass or fail
+- No explanations
+- No punctuation
+- No additional text
+```
+
+For step 16, add an `Assistant` turn in Vapi with:
+
+- `Mock`: off
+- `Evaluation`: on
+- `Approach`: `LLM-as-a-judge`
+
+Use the shared save-order judge template with this expected item:
+
+- `product_id = prod-coke-125l`
+- `quantity = 2`
+- `brand_source = recommended`
+
+Only add the `ORDER_SAVED` tool response after this assistant turn has actually
+called `save_order`. If Vapi reports "No Tool Call ID matched", the tool
+response was attached too early or to the wrong assistant turn.
 
 ### Judge Prompt
 
@@ -1091,38 +1219,379 @@ one active item at a time.
 2. `Assistant`: asks what the customer wants.
 3. `User`: `I need Doritos chips, Coke, and Pauls milk.`
 4. `Assistant`: add a `resolve_item` LLM-as-a-judge checkpoint for
-   `Doritos chips`. Paste `DORITOS_RESOLVED` only after the assistant actually
-   calls `resolve_item` for Doritos chips.
+   `Doritos chips` using the step 4 judge prompt in Tool Validation below.
+   This checkpoint must fail if the assistant also calls `resolve_item` for
+   Coke or Pauls milk in the same turn. Paste `DORITOS_RESOLVED` only after
+   the assistant actually calls `resolve_item` for Doritos chips only.
 5. `Tool Response`: paste `DORITOS_RESOLVED`.
-6. `Assistant`: asks Doritos quantity.
+6. `Assistant`: briefly acknowledges the full list, then asks Doritos
+   quantity. Add the step 6 natural quantity wording judge below. This
+   checkpoint must fail if the assistant sounds like it only heard Doritos or
+   narrates its plan for the queued items.
 7. `User`: `Two.`
-8. `Assistant`: add a `resolve_item` LLM-as-a-judge checkpoint for `Coke`.
-   Paste `COKE_RESOLVED` only after the assistant actually calls
-   `resolve_item` for Coke.
-9. `Tool Response`: paste `COKE_RESOLVED`.
-10. `Assistant`: asks Coke quantity.
-11. `User`: `One.`
-12. `Assistant`: add a `resolve_item` LLM-as-a-judge checkpoint for
-    `Pauls milk`. Paste `PAULS_MILK_RESOLVED` only after the assistant
-    actually calls `resolve_item` for Pauls milk.
-13. `Tool Response`: paste `PAULS_MILK_RESOLVED`.
-14. `Assistant`: asks milk quantity.
-15. `User`: `Three.`
-16. `Assistant`: asks anything else.
-17. `User`: `That's everything.`
-18. `Assistant`: recaps all three items.
-19. `User`: `Yes.`
-20. `Assistant`: add the save-order LLM judge checkpoint using the expected
+8. `Assistant`: add an exact expected tool-call checkpoint for `Coke`.
+   Expected tool/function: `resolve_item`. Expected argument:
+   `mention = Coke`. Paste `COKE_RECOMMENDED` only after the assistant
+   actually calls `resolve_item` for Coke.
+9. `Tool Response`: paste `COKE_RECOMMENDED`.
+10. `Assistant`: recommends Coca-Cola and asks if that is okay.
+11. `User`: `Yes.`
+12. `Assistant`: asks Coke quantity. Add the step 12 natural quantity wording
+    judge below. This checkpoint must fail if the assistant mentions Pauls
+    milk or its plan for the queued item.
+13. `User`: `One.`
+14. `Assistant`: add a `resolve_item` LLM-as-a-judge checkpoint for
+    `Pauls milk` using the step 14 judge prompt below. This checkpoint should
+    check only that the assistant calls `resolve_item` for Pauls milk; the
+    resolved product message comes after the tool response. Paste
+    `PAULS_MILK_RESOLVED` only after the assistant actually calls
+    `resolve_item` for Pauls milk.
+15. `Tool Response`: paste `PAULS_MILK_RESOLVED`.
+16. `Assistant`: asks milk quantity. Add the step 16 natural transition judge
+    below. This should prefer a connected phrase like "And for Pauls Full
+    Cream Milk, how many bottles would you like?"
+17. `User`: `Three.`
+18. `Assistant`: asks anything else. Add the step 18 judge below. This must
+    fail if the assistant recaps or calls `save_order` before asking whether
+    the customer needs anything else.
+19. `User`: `That's everything.`
+20. `Assistant`: recaps all three items. Add the step 20 recap judge below.
+    This must fail if the assistant calls `save_order`; "That's everything"
+    means no more items, not approval of the recap.
+21. `User`: `Yes.`
+22. `Assistant`: add the save-order LLM judge checkpoint using the expected
     SMK-10 item rows from the Save Order Expectations table.
-21. `Tool Response`: paste `ORDER_SAVED`.
-22. `Assistant`: evaluated final checkpoint.
+23. `Tool Response`: paste `ORDER_SAVED`.
+24. `Assistant`: evaluated final checkpoint.
 
 ### Mock Tool Responses
 
-Use `DORITOS_RESOLVED`, `COKE_RESOLVED`, `PAULS_MILK_RESOLVED`, and:
+Use `DORITOS_RESOLVED`, `COKE_RECOMMENDED`, `PAULS_MILK_RESOLVED`, and:
 
 ```json
 {"ok":true,"order_id":"order-smk-10"}
+```
+
+### Tool Validation
+
+For step 4, add an `Assistant` turn in Vapi with:
+
+- `Mock`: off
+- `Evaluation`: on
+- `Approach`: `LLM-as-a-judge`
+
+Use this exact judge prompt:
+
+```text
+You are an LLM-Judge. Evaluate ONLY the last assistant message in the mock conversation: {{messages[-1]}}.
+Context is available in {{messages}}, but your judgment must focus on the last assistant message.
+
+Decision rule:
+- PASS if ALL "pass criteria" are satisfied AND NONE of the "fail criteria" are triggered.
+- Otherwise FAIL.
+
+Pass criteria:
+- The previous user message listed three items: Doritos chips, Coke, and Pauls milk.
+- The last assistant message makes exactly one tool call.
+- The one tool call is `resolve_item` for Doritos chips.
+- The last assistant message does not resolve, ask about, or otherwise handle Coke or Pauls milk in this turn.
+
+Fail criteria:
+- The last assistant message calls `resolve_item` for Coke in this same turn.
+- The last assistant message calls `resolve_item` for Pauls milk in this same turn.
+- The last assistant message makes more than one `resolve_item` tool call.
+- The last assistant message asks quantity before Doritos chips has been resolved.
+- The last assistant message ignores Doritos chips and starts with a different item.
+- The evaluation fails merely because Coke and Pauls milk were not handled in this same turn.
+
+Important domain rule:
+- Multi-item requests must be processed one active item at a time. At this checkpoint, Doritos is the active item. Coke and Pauls milk are intentionally left for later turns, so the assistant should not call tools for them or discuss them now.
+
+Output format: respond with exactly one word: pass or fail
+- No explanations
+- No punctuation
+- No additional text
+```
+
+For step 6, add an `Assistant` turn in Vapi with:
+
+- `Mock`: off
+- `Evaluation`: on
+- `Approach`: `LLM-as-a-judge`
+
+Use this exact judge prompt:
+
+```text
+You are an LLM-Judge. Evaluate ONLY the last assistant message in the mock conversation: {{messages[-1]}}.
+Context is available in {{messages}}, but your judgment must focus on the last assistant message.
+
+Decision rule:
+- PASS if ALL "pass criteria" are satisfied AND NONE of the "fail criteria" are triggered.
+- Otherwise FAIL.
+
+Pass criteria:
+- Doritos chips has just been resolved to Doritos Cheese Corn Chips.
+- The last assistant message says, in natural language, that the assistant heard all three requested items: Doritos chips, Coke, and Pauls milk.
+- Mentioning Coke and Pauls milk in that acknowledgement counts as addressing them for this checkpoint.
+- The last assistant message asks the customer for a specific quantity for Doritos Cheese Corn Chips.
+- The quantity question sounds natural for a phone call.
+
+Fail criteria:
+- The last assistant message sounds like the assistant only heard Doritos chips and missed Coke and Pauls milk.
+- The evaluation fails merely because the assistant does not ask about Coke or Pauls milk yet.
+- The last assistant message asks for Coke quantity, Pauls milk quantity, or any detail about Coke or Pauls milk in this same turn.
+- The last assistant message says or implies what it will handle next, such as "after that", "next", "move on", or "confirm".
+- The last assistant message asks more than one question.
+- The last assistant message calls a tool.
+
+Important style rule:
+- When items are queued, the assistant should acknowledge the full list once, then focus on the current item without narrating the process. A good response is: "Sure, I have Doritos chips, Coke, and Pauls milk. For Doritos Cheese Corn Chips, how many packets would you like?"
+- This exact good response should pass. It acknowledges Coke and Pauls milk, then correctly asks only for the active Doritos quantity.
+
+Output format: respond with exactly one word: pass or fail
+- No explanations
+- No punctuation
+- No additional text
+```
+
+For step 8, prefer exact expected tool-call validation:
+
+```text
+Assistant
+Mock: off
+Evaluation: on
+Approach: exact expected tool call
+Expected tool/function: resolve_item
+Expected arguments: mention = Coke
+```
+
+This avoids false LLM-judge failures that claim the assistant should clarify
+regular, diet, or zero sugar before calling `resolve_item`. In this workflow,
+`resolve_item` is the clarifying catalog-resolution step.
+
+If exact expected tool-call validation is unavailable, add an `Assistant` turn
+in Vapi with:
+
+- `Mock`: off
+- `Evaluation`: on
+- `Approach`: `LLM-as-a-judge`
+
+Use this exact judge prompt:
+
+```text
+You are an LLM-Judge. Evaluate ONLY the last assistant message in the mock conversation: {{messages[-1]}}.
+Context is available in {{messages}}, but your judgment must focus on the last assistant message.
+
+Decision rule:
+- PASS if ALL "pass criteria" are satisfied AND NONE of the "fail criteria" are triggered.
+- Otherwise FAIL.
+
+Pass criteria:
+- Doritos chips already has a resolved product and quantity 2.
+- The next queued item is Coke.
+- The last assistant message makes exactly one tool call.
+- The one tool call is `resolve_item` for Coke.
+- This is the first `resolve_item` call for Coke in the conversation.
+- Calling `resolve_item` for Coke counts as the correct clarification step.
+
+Fail criteria:
+- The last assistant message does not call `resolve_item`.
+- The last assistant message calls `resolve_item` for Doritos chips again.
+- The last assistant message calls `resolve_item` for Pauls milk in this same turn.
+- The evaluation fails because Coke could refer to regular, diet, zero sugar, or another Coke variant.
+- The last assistant message asks the customer to choose regular, diet, zero sugar, or another Coke variant before calling `resolve_item`.
+- The last assistant message asks for Coke quantity before Coke has been resolved by the tool.
+- The last assistant message makes more than one tool call.
+
+Important domain rule:
+- The assistant should not independently clarify Coke variants at this checkpoint. Coke is a normal spoken grocery request and must first be sent to `resolve_item`; the mocked resolver response will recommend Coca-Cola.
+- Product ambiguity is not a reason to fail this checkpoint. Product ambiguity is exactly why the assistant must call `resolve_item`.
+
+Output format: respond with exactly one word: pass or fail
+- No explanations
+- No punctuation
+- No additional text
+```
+
+For step 12, add an `Assistant` turn in Vapi with:
+
+- `Mock`: off
+- `Evaluation`: on
+- `Approach`: `LLM-as-a-judge`
+
+Use this exact judge prompt:
+
+```text
+You are an LLM-Judge. Evaluate ONLY the last assistant message in the mock conversation: {{messages[-1]}}.
+Context is available in {{messages}}, but your judgment must focus on the last assistant message.
+
+Decision rule:
+- PASS if ALL "pass criteria" are satisfied AND NONE of the "fail criteria" are triggered.
+- Otherwise FAIL.
+
+Pass criteria:
+- The customer has accepted the Coca-Cola recommendation.
+- The last assistant message asks the customer for a specific quantity for Coca-Cola soft drink.
+- The quantity question sounds natural for a phone call.
+
+Fail criteria:
+- The last assistant message mentions Pauls milk or any queued item.
+- The last assistant message says or implies what it will handle next, such as "after that", "next", "move on", or "confirm".
+- The last assistant message asks more than one question.
+- The last assistant message calls a tool.
+
+Important style rule:
+- When items are queued, the assistant should not narrate the queue. It should simply ask the current quantity, for example: "Coca-Cola soft drink, got it. How many bottles would you like?"
+
+Output format: respond with exactly one word: pass or fail
+- No explanations
+- No punctuation
+- No additional text
+```
+
+For step 14, add an `Assistant` turn in Vapi with:
+
+- `Mock`: off
+- `Evaluation`: on
+- `Approach`: `LLM-as-a-judge`
+
+Use this exact judge prompt:
+
+```text
+You are an LLM-Judge. Evaluate ONLY the last assistant message in the mock conversation: {{messages[-1]}}.
+Context is available in {{messages}}, but your judgment must focus on the last assistant message.
+
+Decision rule:
+- PASS if ALL "pass criteria" are satisfied AND NONE of the "fail criteria" are triggered.
+- Otherwise FAIL.
+
+Pass criteria:
+- Doritos chips already has a resolved product and quantity 2.
+- Coca-Cola soft drink already has an accepted recommendation and quantity 1.
+- The next queued item is Pauls milk.
+- The last assistant message calls the `resolve_item` tool for Pauls milk.
+- This is the first `resolve_item` call for Pauls milk in the conversation.
+
+Fail criteria:
+- The last assistant message does not call `resolve_item`.
+- The last assistant message asks for milk quantity before Pauls milk has been resolved by the tool.
+- The last assistant message calls `resolve_item` for Doritos chips or Coke again.
+- The last assistant message calls more than one tool.
+
+Important domain rule:
+- Do not fail this checkpoint because the assistant has not yet said the resolved product name. Product details are expected only after the `PAULS_MILK_RESOLVED` tool response.
+
+Output format: respond with exactly one word: pass or fail
+- No explanations
+- No punctuation
+- No additional text
+```
+
+For step 16, add an `Assistant` turn in Vapi with:
+
+- `Mock`: off
+- `Evaluation`: on
+- `Approach`: `LLM-as-a-judge`
+
+Use this exact judge prompt:
+
+```text
+You are an LLM-Judge. Evaluate ONLY the last assistant message in the mock conversation: {{messages[-1]}}.
+Context is available in {{messages}}, but your judgment must focus on the last assistant message.
+
+Decision rule:
+- PASS if ALL "pass criteria" are satisfied AND NONE of the "fail criteria" are triggered.
+- Otherwise FAIL.
+
+Pass criteria:
+- Pauls milk has just been resolved to Pauls Full Cream Milk.
+- Doritos chips and Coca-Cola soft drink already have quantities.
+- The last assistant message asks the customer for a specific quantity for Pauls Full Cream Milk.
+- The quantity question uses a natural transition from the prior queued items, such as "And for Pauls Full Cream Milk, how many bottles would you like?"
+
+Fail criteria:
+- The last assistant message sounds like a fresh standalone acknowledgement with no transition, such as only "Pauls Full Cream Milk, got it. How many bottles would you like?"
+- The last assistant message says or implies what it will handle next, such as "after that", "next", "move on", or "confirm".
+- The last assistant message asks more than one question.
+- The last assistant message calls a tool.
+- The last assistant message asks for another product or brand instead of milk quantity.
+
+Important style rule:
+- For later queued items, use a light conversational transition instead of resetting with another "got it." A good response is: "And for Pauls Full Cream Milk, how many bottles would you like?"
+
+Output format: respond with exactly one word: pass or fail
+- No explanations
+- No punctuation
+- No additional text
+```
+
+For step 18, add an `Assistant` turn in Vapi with:
+
+- `Mock`: off
+- `Evaluation`: on
+- `Approach`: `LLM-as-a-judge`
+
+Use this exact judge prompt:
+
+```text
+You are an LLM-Judge. Evaluate ONLY the last assistant message in the mock conversation: {{messages[-1]}}.
+Context is available in {{messages}}, but your judgment must focus on the last assistant message.
+
+Decision rule:
+- PASS if ALL "pass criteria" are satisfied AND NONE of the "fail criteria" are triggered.
+- Otherwise FAIL.
+
+Pass criteria:
+- Doritos chips has quantity 2, Coca-Cola soft drink has quantity 1, and Pauls Full Cream Milk has quantity 3.
+- The last assistant message asks whether the customer needs anything else.
+- The last assistant message does not recap the full order yet.
+
+Fail criteria:
+- The last assistant message calls `save_order`.
+- The last assistant message recaps all three items instead of asking whether the customer needs anything else.
+- The last assistant message treats quantity 3 for milk as the final approval to save.
+- The last assistant message asks for another product, brand, or quantity instead of asking whether anything else is needed.
+
+Output format: respond with exactly one word: pass or fail
+- No explanations
+- No punctuation
+- No additional text
+```
+
+For step 20, add an `Assistant` turn in Vapi with:
+
+- `Mock`: off
+- `Evaluation`: on
+- `Approach`: `LLM-as-a-judge`
+
+Use this exact judge prompt:
+
+```text
+You are an LLM-Judge. Evaluate ONLY the last assistant message in the mock conversation: {{messages[-1]}}.
+Context is available in {{messages}}, but your judgment must focus on the last assistant message.
+
+Decision rule:
+- PASS if ALL "pass criteria" are satisfied AND NONE of the "fail criteria" are triggered.
+- Otherwise FAIL.
+
+Pass criteria:
+- The customer's latest message says there are no more items.
+- The last assistant message recaps exactly these three items: quantity 2 Doritos Cheese Corn Chips, quantity 1 Coca-Cola soft drink, and quantity 3 Pauls Full Cream Milk.
+- The last assistant message asks the customer to confirm whether the recap is correct.
+
+Fail criteria:
+- The last assistant message calls `save_order`.
+- The last assistant message treats "That's everything" as approval of the recap.
+- The last assistant message omits any of the three items or gives the wrong quantity.
+- The last assistant message asks for more items instead of recapping.
+
+Important domain rule:
+- "That's everything" or "no more" means the customer has no additional items. It does not approve the recap. The assistant must read the full recap and wait for an explicit confirmation before calling `save_order`.
+
+Output format: respond with exactly one word: pass or fail
+- No explanations
+- No punctuation
+- No additional text
 ```
 
 ### Judge Prompt

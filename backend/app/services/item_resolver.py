@@ -29,7 +29,7 @@ RECOMMEND = "recommend"    # suggest a brand, agent must confirm
 ASK = "ask"                # nothing to go on, agent must ask
 
 COMMON_BRAND_ALIASES = {
-    "Coca-Cola": {"coke", "coca cola", "coca-cola", "cola"},
+    "Coca-Cola": {"coca cola", "coca-cola"},
     "Red Bull": {"redbull"},
 }
 
