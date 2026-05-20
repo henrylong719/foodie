@@ -16,10 +16,13 @@ assert summary["order_history"] > 0, "history should not be empty"
 assert summary["captured_orders"] == 0, "captured_orders should start empty"
 
 p = db.products.find_one()
-for field in ("name", "brand", "category", "subcategory", "aliases",
-              "size", "unit", "price", "in_stock", "popularity_score"):
+for field in (
+    "name", "brand", "brand_aliases", "category", "subcategory", "aliases",
+    "size", "unit", "price", "in_stock", "popularity_score",
+):
     assert field in p, f"product missing field: {field}"
 assert isinstance(p["aliases"], list) and p["aliases"], "aliases must be a non-empty list"
+assert isinstance(p["brand_aliases"], list), "brand_aliases must be a list"
 
 c = db.customers.find_one()
 for field in ("name", "phone", "do_not_call", "consent", "preferred_language"):
@@ -50,6 +53,8 @@ print("\n  categories:", sorted(cats))
 sample = db.products.find_one({"aliases": "chips"})
 print("  sample 'chips' product:", sample["name"] if sample else "NONE FOUND")
 assert sample is not None, "alias lookup for 'chips' failed"
+assert db.products.find_one({"brand": "Bakers Delight", "brand_aliases": "bakers"}), \
+    "brand alias lookup for Bakers Delight failed"
 
 # dedupe guarantee: all products must be unique
 names = [p["name"] for p in db.products.find()]

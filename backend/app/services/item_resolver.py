@@ -28,25 +28,46 @@ CONFIRM = "confirm"        # propose a product, agent must confirm
 RECOMMEND = "recommend"    # suggest a brand, agent must confirm
 ASK = "ask"                # nothing to go on, agent must ask
 
-COMMON_BRAND_ALIASES = {
-    "Coca-Cola": {"coca cola", "coca-cola"},
-    "Red Bull": {"redbull"},
-}
-
-
 def _normalize_phrase(value: str) -> str:
     """Normalize spoken text for brand matching."""
     return " ".join(re.sub(r"[^a-z0-9]+", " ", value.lower()).split())
 
 
-def _brand_aliases(brand: str) -> set[str]:
+def _brand_aliases(
+    brand: str,
+    configured_aliases: set[str] | None = None,
+) -> set[str]:
     normalized = _normalize_phrase(brand)
     aliases = {normalized, normalized.replace(" ", "")}
-    aliases.update(_normalize_phrase(alias)
-                   for alias in COMMON_BRAND_ALIASES.get(brand, set()))
-    aliases.update(_normalize_phrase(alias).replace(" ", "")
-                   for alias in COMMON_BRAND_ALIASES.get(brand, set()))
+    for alias in configured_aliases or set():
+        normalized_alias = _normalize_phrase(alias)
+        aliases.add(normalized_alias)
+        aliases.add(normalized_alias.replace(" ", ""))
     return {alias for alias in aliases if alias}
+
+
+def _brand_alias_map(products: list[dict]) -> dict[str, set[str]]:
+    aliases_by_brand: dict[str, set[str]] = {}
+    for product in products:
+        brand = product.get("brand")
+        if not isinstance(brand, str):
+            continue
+
+        aliases = aliases_by_brand.setdefault(brand, set())
+        for alias in product.get("brand_aliases") or []:
+            if isinstance(alias, str):
+                aliases.add(alias)
+    return aliases_by_brand
+
+
+async def _catalog_brand_alias_map(
+    db: AsyncIOMotorDatabase,
+) -> dict[str, set[str]]:
+    products = await db.products.find(
+        {},
+        {"brand": 1, "brand_aliases": 1},
+    ).to_list(length=10000)
+    return _brand_alias_map(products)
 
 
 def _contains_phrase(text: str, phrase: str) -> bool:
@@ -63,32 +84,47 @@ def _natural_item_name(brand: str, subcategory: str) -> str:
     return f"{brand} {subcategory.lower()}"
 
 
-def _resolve_brand_name(brand: str, known_brands: set[str]) -> str | None:
+def _resolve_brand_name(
+    brand: str,
+    aliases_by_brand: dict[str, set[str]],
+) -> str | None:
     """Return the stocked brand matching a spoken brand variant."""
     normalized = _normalize_phrase(brand)
     if not normalized:
         return None
 
-    for known_brand in sorted(known_brands, key=len, reverse=True):
-        if normalized in _brand_aliases(known_brand):
+    for known_brand in sorted(aliases_by_brand, key=len, reverse=True):
+        if normalized in _brand_aliases(
+            known_brand,
+            aliases_by_brand[known_brand],
+        ):
             return known_brand
     return None
 
 
-def _strip_brands(mention: str, known_brands: set[str]) -> tuple[str, str | None]:
+def _strip_brands(
+    mention: str,
+    aliases_by_brand: dict[str, set[str]],
+) -> tuple[str, str | None]:
     """Separate a brand name from the rest of the mention.
 
     "Doritos chips" -> ("chips", "Doritos"). Searching on the product term
     alone ("chips") is far more reliable than searching the whole phrase.
-    Returns (remaining_text, matched_brand_or_None).
+    Returns (remaining_text, matched_brand_or_None). When the mention is
+    only a brand ("Doritos"), remaining is "" — the caller is expected to
+    pivot to that brand's subcategory rather than search for the brand name.
     """
     text = _normalize_phrase(mention)
-    for brand in sorted(known_brands, key=len, reverse=True):
-        aliases = sorted(_brand_aliases(brand), key=len, reverse=True)
+    for brand in sorted(aliases_by_brand, key=len, reverse=True):
+        aliases = sorted(
+            _brand_aliases(brand, aliases_by_brand[brand]),
+            key=len,
+            reverse=True,
+        )
         for alias in aliases:
             if _contains_phrase(text, alias):
                 remaining = _remove_phrase(text, alias)
-                return (remaining or mention, brand)
+                return (remaining, brand)
     return (mention, None)
 
 
@@ -136,8 +172,18 @@ async def resolve_item(
                 "message": "I didn't catch that — could you say it again?"}
 
     # --- detect a brand in the mention, search on the product term only ---
-    known_brands = set(await db.products.distinct("brand"))
-    search_term, named_brand = _strip_brands(mention, known_brands)
+    aliases_by_brand = await _catalog_brand_alias_map(db)
+    search_term, named_brand = _strip_brands(mention, aliases_by_brand)
+
+    # Brand-only mention ("Doritos"): the brand name alone isn't a product
+    # alias, so pivot to that brand's subcategory before searching.
+    if not search_term and named_brand is not None:
+        branded = await db.products.find_one(
+            {"brand": named_brand},
+            sort=[("popularity_score", -1)],
+        )
+        if branded is not None:
+            search_term = branded["subcategory"]
 
     # --- Stage 1: identify the subcategory via product search ---
     candidates = await resolution.search_products(db, search_term, limit=10)
@@ -152,14 +198,17 @@ async def resolve_item(
     # --- Stage 2a: brand named in the mention and stocked in this subcategory? ---
     if named_brand is not None:
         for product in candidates:
-            if product["brand"] == named_brand:
+            # Must be in-stock: candidates are ranked in-stock-first, but if
+            # every product for this brand is OOS the loop would otherwise
+            # confirm a SKU we can't actually fulfil.
+            if product["brand"] == named_brand and product.get("in_stock", False):
                 return {
                     "status": RESOLVED, "mention": mention,
                     "subcategory": subcategory, "brand_source": "mentioned",
                     "product": product,
                     "message": f"Got it — {product['name']}.",
                 }
-        # brand named but not available here — note it, continue to fallback
+        # brand named but not available (or all OOS) — continue to fallback
 
     # --- Stage 2b: history-first — did they buy this subcategory before? ---
     past = await customer_history.infer_brand_from_history(
@@ -174,25 +223,28 @@ async def resolve_item(
         }
 
     # --- Stage 2c: popularity fallback — recommend the top brand ---
+    # Walk popularity in rank order and stop at the first brand with an
+    # in-stock candidate, so we don't recommend a brand that's fully OOS.
     brand_options = await _brand_options(db, subcategory)
-    top_brand = await resolution.get_top_brand(db, subcategory)
-    if top_brand is not None:
+    for top in await resolution.get_top_brands(db, subcategory):
         recommended_product = next(
-            (product for product in candidates if product["brand"] == top_brand["brand"]),
+            (product for product in candidates
+             if product["brand"] == top["brand"] and product.get("in_stock", False)),
             None,
         )
-        if recommended_product is not None:
-            recommended_product = {
-                **recommended_product,
-                "name": _natural_item_name(top_brand["brand"], subcategory),
-            }
+        if recommended_product is None:
+            continue
+        recommended_product = {
+            **recommended_product,
+            "name": _natural_item_name(top["brand"], subcategory),
+        }
         return {
             "status": RECOMMEND, "mention": mention,
             "subcategory": subcategory, "brand_source": "recommended",
-            "brand": top_brand["brand"], "available_brands": brand_options,
+            "brand": top["brand"], "available_brands": brand_options,
             "product": recommended_product,
             "message": (f"Our most popular {subcategory.lower()} is "
-                        f"{top_brand['brand']} — would you like that?"),
+                        f"{top['brand']} — would you like that?"),
         }
 
     # --- Stage 2d: nothing to go on — ask ---
@@ -222,13 +274,25 @@ async def resolve_brand(
     Returns a dict with status RESOLVED (product found) or ASK (brand not
     stocked in this subcategory).
     """
+    # Validate the subcategory — the agent supplies this arg and can
+    # hallucinate (e.g. "Cookies" for "Biscuits"). Without this check,
+    # search_products would fall back to $text and return unrelated hits,
+    # producing a brand list that has nothing to do with what was asked.
+    if not subcategory or not await db.products.find_one(
+        {"subcategory": subcategory}
+    ):
+        return {
+            "status": ASK, "subcategory": subcategory,
+            "available_brands": [],
+            "message": (
+                f"Sorry, we don't carry {subcategory or 'that'} — "
+                f"could you tell me what you'd like instead?"
+            ),
+        }
+
     candidates = await resolution.search_products(db, subcategory, limit=50)
-    known_brands = {
-        product["brand"]
-        for product in candidates
-        if isinstance(product.get("brand"), str)
-    }
-    resolved_brand = _resolve_brand_name(brand or "", known_brands)
+    aliases_by_brand = _brand_alias_map(candidates)
+    resolved_brand = _resolve_brand_name(brand or "", aliases_by_brand)
 
     for product in candidates:
         if product["brand"] == resolved_brand:

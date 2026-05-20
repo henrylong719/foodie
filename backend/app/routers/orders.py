@@ -23,20 +23,8 @@ async def get_order(
     order_id: str,
     db: AsyncIOMotorDatabase = Depends(get_db),
 ):
-    """Fetch one captured order by id."""
-    from bson import ObjectId
-    from bson.errors import InvalidId
-    try:
-        oid = ObjectId(order_id)
-    except (InvalidId, TypeError):
+    """Fetch one captured order by id, with customer name joined."""
+    order = await orders.get_order(db, order_id)
+    if order is None:
         raise HTTPException(status_code=404, detail="Order not found")
-
-    doc = await db.captured_orders.find_one({"_id": oid})
-    if doc is None:
-        raise HTTPException(status_code=404, detail="Order not found")
-
-    doc["_id"] = str(doc["_id"])
-    doc["customer_id"] = str(doc["customer_id"])
-    if doc.get("created_at"):
-        doc["created_at"] = doc["created_at"].isoformat()
-    return doc
+    return order

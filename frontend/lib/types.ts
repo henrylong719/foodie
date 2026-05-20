@@ -74,7 +74,7 @@ export interface PlaceCallResult {
 export interface TranscriptLine {
   role: 'assistant' | 'customer';
   text: string;
-  ts: number;
+  ts?: number;
 }
 
 // A persisted call record (audit trail).

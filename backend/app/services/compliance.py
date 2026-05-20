@@ -22,11 +22,18 @@ holidays are out of scope for the demo (noted in PROJECT_PLAN open items).
 Kept HTTP-free so it can be unit-tested directly.
 """
 
+import logging
 from dataclasses import dataclass
 from datetime import datetime
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from app.config import settings
+
+logger = logging.getLogger(__name__)
+
+# Bad timezone names we've already warned about, so the log isn't spammed
+# once per call. Bounded by the (tiny) set of misconfigured values seen.
+_warned_bad_timezones: set[str] = set()
 
 # Reasons a call is blocked — stable string codes the frontend can switch on.
 REASON_DO_NOT_CALL = "do_not_call"
@@ -58,11 +65,23 @@ def _local_now() -> datetime:
     """Current time in the configured calling timezone.
 
     Falls back to UTC if the timezone name is invalid rather than crashing —
-    a misconfigured tz should not take the whole dialer down.
+    a misconfigured tz should not take the whole dialer down. Logs a warning
+    the first time each bad value is seen so the misconfiguration is visible
+    in operator logs (a silent fallback can shift the calling-hours gate by
+    10+ hours and pass/fail calls at the wrong times all day).
     """
+    bad_tz_name = settings.calling_timezone
     try:
-        tz = ZoneInfo(settings.calling_timezone)
+        tz = ZoneInfo(bad_tz_name)
     except (ZoneInfoNotFoundError, ValueError):
+        if bad_tz_name not in _warned_bad_timezones:
+            _warned_bad_timezones.add(bad_tz_name)
+            logger.warning(
+                "CALLING_TIMEZONE=%r is not a valid IANA timezone; "
+                "falling back to UTC. The calling-hours gate will evaluate "
+                "against UTC until this is fixed.",
+                bad_tz_name,
+            )
         tz = ZoneInfo("UTC")
     return datetime.now(tz)
 

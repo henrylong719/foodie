@@ -17,7 +17,8 @@ export const dynamic = "force-dynamic";
 const orderDateFormatter = new Intl.DateTimeFormat("en-US", {
   dateStyle: "medium",
   timeStyle: "short",
-  timeZone: "UTC",
+  timeZone: "Australia/Sydney",
+  timeZoneName: "short",
 });
 
 function formatDate(iso: string | null): string {
@@ -259,9 +260,7 @@ export default async function OrdersPage() {
   try {
     const { orders, count } = await listOrders();
     const recommendedOrders = countOrdersWithRecommendedItems(orders);
-    const pendingOrders =
-      countOrdersByStatus(orders, "pending_fulfillment") +
-      countOrdersByStatus(orders, "pending_fulfilment");
+    const pendingOrders = countOrdersByStatus(orders, "pending_fulfillment");
     const totalItems = orders.reduce((sum, order) => sum + order.item_count, 0);
 
     return (

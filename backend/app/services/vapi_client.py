@@ -201,32 +201,35 @@ def extract_transcript_lines(call: dict[str, Any]) -> list[dict[str, Any]]:
 
     openai_lines = artifact.get("messagesOpenAIFormatted")
     if isinstance(openai_lines, list):
-        lines = [
-            _normalize_openai_line(line, index)
-            for index, line in enumerate(openai_lines)
-        ]
+        lines = [_normalize_openai_line(line) for line in openai_lines]
         return [line for line in lines if line is not None]
 
     return []
 
 
 def extract_recording_url(call: dict[str, Any]) -> str | None:
-    """Return the best recording URL Vapi exposes for a call artifact."""
+    """Return the best recording URL Vapi exposes for a call artifact.
+
+    Prefers stereo over mono regardless of where the key lives in the payload.
+    """
     artifact = call.get("artifact") or {}
-
-    for key in ("stereoRecordingUrl", "recordingUrl"):
-        value = artifact.get(key)
-        if isinstance(value, str) and value:
-            return value
-
     recording = artifact.get("recording")
+    recording_dict = recording if isinstance(recording, dict) else {}
+
+    stereo = artifact.get("stereoRecordingUrl") or recording_dict.get("stereoUrl")
+    if isinstance(stereo, str) and stereo:
+        return stereo
+
+    mono = artifact.get("recordingUrl") or recording_dict.get("url") or recording_dict.get("monoUrl")
+    if isinstance(mono, str) and mono:
+        return mono
+
     if isinstance(recording, str) and recording:
         return recording
-    if isinstance(recording, dict):
-        for key in ("stereoUrl", "url", "monoUrl", "videoUrl"):
-            value = recording.get(key)
-            if isinstance(value, str) and value:
-                return value
+
+    video = recording_dict.get("videoUrl")
+    if isinstance(video, str) and video:
+        return video
 
     return None
 
@@ -239,6 +242,14 @@ def _normalize_role(role: object) -> str | None:
     return None
 
 
+def _line_timestamp(line: dict[str, Any], keys: tuple[str, ...]) -> Any | None:
+    for key in keys:
+        value = line.get(key)
+        if value is not None:
+            return value
+    return None
+
+
 def _normalize_artifact_line(line: object) -> dict[str, Any] | None:
     if not isinstance(line, dict):
         return None
@@ -246,15 +257,19 @@ def _normalize_artifact_line(line: object) -> dict[str, Any] | None:
     text = line.get("message") or line.get("text") or line.get("transcript")
     if role is None or not isinstance(text, str) or not text.strip():
         return None
-    ts = line.get("time") or line.get("secondsFromStart") or line.get("ts") or 0
+    ts = _line_timestamp(line, ("time", "secondsFromStart", "ts")) or 0
     return {"role": role, "text": text, "ts": ts}
 
 
-def _normalize_openai_line(line: object, index: int) -> dict[str, Any] | None:
+def _normalize_openai_line(line: object) -> dict[str, Any] | None:
     if not isinstance(line, dict):
         return None
     role = _normalize_role(line.get("role"))
     text = line.get("content")
     if role is None or not isinstance(text, str) or not text.strip():
         return None
-    return {"role": role, "text": text, "ts": index}
+    out: dict[str, Any] = {"role": role, "text": text}
+    ts = _line_timestamp(line, ("time", "secondsFromStart", "timestamp", "ts"))
+    if ts is not None:
+        out["ts"] = ts
+    return out

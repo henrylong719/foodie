@@ -44,30 +44,46 @@ chips_smiths = ObjectId()
 _raw.products.insert_many([
     {"_id": chips_smiths, "name": "Smith's Original Potato Chips 150g",
      "brand": "Smith's", "category": "Snacks", "subcategory": "Chips",
+     "brand_aliases": ["smiths"],
      "aliases": ["chips", "crisps"], "size": "150g", "unit": "packet",
      "price": 4.5, "in_stock": True, "popularity_score": 90},
     {"_id": ObjectId(), "name": "Doritos Cheese Corn Chips 170g",
      "brand": "Doritos", "category": "Snacks", "subcategory": "Chips",
+     "brand_aliases": [],
      "aliases": ["chips", "crisps"], "size": "170g", "unit": "packet",
      "price": 5.0, "in_stock": True, "popularity_score": 70},
     {"_id": ObjectId(), "name": "Pauls Full Cream Milk 2L",
      "brand": "Pauls", "category": "Dairy", "subcategory": "Milk",
+     "brand_aliases": [],
      "aliases": ["milk", "fresh milk"], "size": "2L", "unit": "bottle",
      "price": 3.5, "in_stock": True, "popularity_score": 60},
     {"_id": ObjectId(), "name": "Coca-Cola Classic Soft Drink 1.25L",
      "brand": "Coca-Cola", "category": "Beverages", "subcategory": "Soft Drink",
+     "brand_aliases": ["coca cola", "coca-cola"],
      "aliases": ["soft drink", "soda", "coke", "cola"], "size": "1.25L",
      "unit": "bottle", "price": 3.0, "in_stock": True,
      "popularity_score": 80},
     {"_id": ObjectId(), "name": "Schweppes Lemonade Soft Drink 1.25L",
      "brand": "Schweppes", "category": "Beverages", "subcategory": "Soft Drink",
+     "brand_aliases": [],
      "aliases": ["soft drink", "soda", "cola"], "size": "1.25L",
      "unit": "bottle", "price": 2.8, "in_stock": True,
      "popularity_score": 50},
     {"_id": ObjectId(), "name": "Red Bull Original Energy Drink 250ml",
      "brand": "Red Bull", "category": "Beverages", "subcategory": "Energy Drink",
+     "brand_aliases": ["redbull"],
      "aliases": ["energy drink"], "size": "250ml", "unit": "can",
      "price": 4.0, "in_stock": True, "popularity_score": 70},
+    {"_id": ObjectId(), "name": "Arnott's Original Crackers 250g",
+     "brand": "Arnott's", "category": "Snacks", "subcategory": "Crackers",
+     "brand_aliases": ["arnotts"],
+     "aliases": ["crackers"], "size": "250g", "unit": "packet",
+     "price": 4.2, "in_stock": True, "popularity_score": 65},
+    {"_id": ObjectId(), "name": "Bakers Delight Classic Bread 650g",
+     "brand": "Bakers Delight", "category": "Bakery", "subcategory": "Bread",
+     "brand_aliases": ["bakers"],
+     "aliases": ["bread", "loaf"], "size": "650g", "unit": "loaf",
+     "price": 5.5, "in_stock": True, "popularity_score": 55},
 ])
 
 # brand_popularity: Doritos is the top chips brand. NOTE: no Milk row, so the
@@ -167,10 +183,69 @@ async def run():
     assert "product" not in r
     print(f"  'Coke' brand     -> {r['status']} (ambiguous brand answer)")
 
+    # --- unknown subcategory (agent hallucination) -> ASK, no brand list ---
+    r = await ir.resolve_brand(db, "Cookies", "Arnott's")
+    assert r["status"] == ASK, f"expected ASK, got {r['status']}"
+    assert r["available_brands"] == [], "must not surface brands for unknown subcategory"
+    assert "product" not in r
+    assert "Cookies" in r["message"], "message should name the unknown subcategory"
+    print(f"  'Cookies'/Arnott -> {r['status']} (unknown subcategory)")
+
     r = await ir.resolve_item(db, "Smiths chips", CUST_ID)
     assert r["status"] == RESOLVED, "apostrophe-free brand should resolve"
     assert r["product"]["brand"] == "Smith's"
     print(f"  'Smiths chips'   -> {r['status']} (punctuation-insensitive)")
+
+    r = await ir.resolve_brand(db, "Crackers", "arnotts")
+    assert r["status"] == RESOLVED, f"expected RESOLVED, got {r['status']}"
+    assert r["product"]["brand"] == "Arnott's"
+    print(f"  'arnotts'        -> {r['status']} (catalog brand alias)")
+
+    r = await ir.resolve_item(db, "bakers bread", NEW_CUST)
+    assert r["status"] == RESOLVED, f"expected RESOLVED, got {r['status']}"
+    assert r["product"]["brand"] == "Bakers Delight"
+    print(f"  'bakers bread'   -> {r['status']} (catalog brand alias)")
+
+    # --- branded mention but every product for that brand is OOS ---
+    # Must NOT RESOLVE to an unfulfillable SKU. Falls through to the next
+    # fallback (history CONFIRM for this customer with Smith's history).
+    _raw.products.update_many({"brand": "Doritos"}, {"$set": {"in_stock": False}})
+    r = await ir.resolve_item(db, "Doritos chips", CUST_ID)
+    assert r["status"] != RESOLVED or r["product"].get("in_stock"), (
+        f"must not RESOLVE to OOS product, got {r['status']} for "
+        f"{r.get('product')}"
+    )
+    assert r["status"] == CONFIRM, f"expected fallback to CONFIRM, got {r['status']}"
+    assert r["product"]["name"].startswith("Smith's"), \
+        f"expected Smith's history fallback, got {r['product']['name']}"
+    print(f"  'Doritos' all OOS -> {r['status']} (skips OOS, falls back)")
+
+    # --- top-popularity brand is OOS: RECOMMEND should skip to next brand ---
+    # NEW_CUST has no history, so 2c is the path. Doritos is the top brand
+    # by popularity but fully OOS, so we should recommend Smith's instead.
+    r = await ir.resolve_item(db, "chips", NEW_CUST)
+    assert r["status"] == RECOMMEND, f"expected RECOMMEND, got {r['status']}"
+    assert r["brand"] == "Smith's", \
+        f"top OOS brand should be skipped; got {r['brand']}"
+    assert r["product"]["brand"] == "Smith's"
+    assert r["product"].get("in_stock"), "recommended product must be in stock"
+    print(f"  'chips' top OOS  -> {r['status']} (skips OOS brand, recommends next)")
+    _raw.products.update_many({"brand": "Doritos"}, {"$set": {"in_stock": True}})
+
+    # --- brand-only mention ("Doritos") should pivot to that brand's
+    # subcategory and resolve, not fall through to ASK. ---
+    r = await ir.resolve_item(db, "Doritos", NEW_CUST)
+    assert r["status"] == RESOLVED, f"expected RESOLVED, got {r['status']}"
+    assert r["product"]["brand"] == "Doritos"
+    assert r["subcategory"] == "Chips"
+    print(f"  'Doritos'        -> {r['status']} (brand-only mention)")
+
+    # multi-word brand alias ("Red Bull") should also resolve brand-only
+    r = await ir.resolve_item(db, "Red Bull", NEW_CUST)
+    assert r["status"] == RESOLVED, f"expected RESOLVED, got {r['status']}"
+    assert r["product"]["brand"] == "Red Bull"
+    assert r["subcategory"] == "Energy Drink"
+    print(f"  'Red Bull'       -> {r['status']} (multi-word brand-only)")
 
 
 asyncio.run(run())

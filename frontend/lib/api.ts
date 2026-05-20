@@ -25,7 +25,9 @@ async function get<T>(path: string): Promise<T> {
 export async function listProducts(
   category?: string,
 ): Promise<{ count: number; products: Product[] }> {
-  const q = category ? `?category=${encodeURIComponent(category)}` : '';
+  const params = new URLSearchParams({ limit: '200' });
+  if (category) params.set('category', category);
+  const q = `?${params.toString()}`;
   return get(`/products${q}`);
 }
 

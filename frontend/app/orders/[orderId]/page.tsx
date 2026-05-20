@@ -16,7 +16,8 @@ export const dynamic = "force-dynamic";
 const orderDateFormatter = new Intl.DateTimeFormat("en-US", {
   dateStyle: "medium",
   timeStyle: "short",
-  timeZone: "UTC",
+  timeZone: "Australia/Sydney",
+  timeZoneName: "short",
 });
 
 function formatDate(iso: string | null): string {

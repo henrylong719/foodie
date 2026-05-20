@@ -32,6 +32,12 @@ type Phase =
   | { kind: 'blocked'; customer: Customer; compliance: ComplianceResult }
   | { kind: 'error'; message: string };
 
+// Module-level guard against the effect firing twice for the same customer
+// in quick succession — React 18 StrictMode double-mounts in dev, and the
+// in-flight POST can't be aborted from the cleanup. Backend dedupe handles
+// the rest (refresh, hard reload, etc.).
+const inFlight = new Set<string>();
+
 function NewCallInner() {
   const router = useRouter();
   const params = useSearchParams();
@@ -51,37 +57,44 @@ function NewCallInner() {
         return;
       }
 
-      // Resolve the customer for display (the backend re-checks everything).
-      let customer: Customer | undefined;
-      try {
-        const { customers } = await listCustomers();
-        customer = customers.find((c) => c._id === customerId);
-      } catch (e) {
-        if (!cancelled)
-          setPhase({ kind: 'error', message: (e as Error).message });
-        return;
-      }
-      if (!customer) {
-        if (!cancelled)
-          setPhase({ kind: 'error', message: 'Customer not found.' });
-        return;
-      }
-      if (cancelled) return;
-      setPhase({ kind: 'placing', customer });
+      if (inFlight.has(customerId)) return;
+      inFlight.add(customerId);
 
-      // Place the call — the compliance gate runs server-side.
       try {
-        const result = await placeCall(customerId);
-        if (cancelled) return;
-        // Success — hand off to the live-call view.
-        router.replace(`/calls/${result.call_id}?live=1`);
-      } catch (e) {
-        if (cancelled) return;
-        if (e instanceof CallBlockedError) {
-          setPhase({ kind: 'blocked', customer, compliance: e.compliance });
-        } else {
-          setPhase({ kind: 'error', message: (e as Error).message });
+        // Resolve the customer for display (the backend re-checks everything).
+        let customer: Customer | undefined;
+        try {
+          const { customers } = await listCustomers();
+          customer = customers.find((c) => c._id === customerId);
+        } catch (e) {
+          if (!cancelled)
+            setPhase({ kind: 'error', message: (e as Error).message });
+          return;
         }
+        if (!customer) {
+          if (!cancelled)
+            setPhase({ kind: 'error', message: 'Customer not found.' });
+          return;
+        }
+        if (cancelled) return;
+        setPhase({ kind: 'placing', customer });
+
+        // Place the call — the compliance gate runs server-side.
+        try {
+          const result = await placeCall(customerId);
+          if (cancelled) return;
+          // Success — hand off to the live-call view.
+          router.replace(`/calls/${result.call_id}?live=1`);
+        } catch (e) {
+          if (cancelled) return;
+          if (e instanceof CallBlockedError) {
+            setPhase({ kind: 'blocked', customer, compliance: e.compliance });
+          } else {
+            setPhase({ kind: 'error', message: (e as Error).message });
+          }
+        }
+      } finally {
+        inFlight.delete(customerId);
       }
     }
 

@@ -14,6 +14,12 @@ correct and simple.
 import asyncio
 from collections import defaultdict
 
+# Per-subscriber queue cap. A paused or slow consumer (e.g. a backgrounded
+# browser tab) cannot then grow memory without bound on a long call. On
+# overflow we drop the oldest event — for a live transcript the newest lines
+# are what the viewer wants to see.
+MAX_QUEUE_SIZE = 1000
+
 
 class EventHub:
     """Per-call fan-out of events to any number of subscribers."""
@@ -24,7 +30,7 @@ class EventHub:
 
     def subscribe(self, call_id: str) -> asyncio.Queue:
         """Register a subscriber for a call. Returns a queue to read from."""
-        queue: asyncio.Queue = asyncio.Queue()
+        queue: asyncio.Queue = asyncio.Queue(maxsize=MAX_QUEUE_SIZE)
         self._subscribers[call_id].add(queue)
         return queue
 
@@ -41,9 +47,22 @@ class EventHub:
 
         If there are no subscribers (no dashboard watching), the event is
         simply dropped — that is fine, it is a live feed, not a log.
+
+        A single stuck subscriber must not block delivery to the others, so
+        we use put_nowait and drop the oldest event on overflow.
         """
         for queue in list(self._subscribers.get(call_id, ())):
-            await queue.put(event)
+            try:
+                queue.put_nowait(event)
+            except asyncio.QueueFull:
+                try:
+                    queue.get_nowait()
+                except asyncio.QueueEmpty:
+                    pass
+                try:
+                    queue.put_nowait(event)
+                except asyncio.QueueFull:
+                    pass
 
     def subscriber_count(self, call_id: str) -> int:
         """How many dashboards are watching a call — useful for tests/debug."""

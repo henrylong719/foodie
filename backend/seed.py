@@ -212,9 +212,29 @@ DESCRIPTORS = [
     "Premium", "Reduced Fat", "No Added Sugar", "Twin Pack",
 ]
 
+BRAND_ALIASES = {
+    "Arnott's": ["arnotts"],
+    "Bakers Delight": ["bakers"],
+    "Butcher's Pride": ["butchers pride"],
+    "Coca-Cola": ["coca cola", "coca-cola"],
+    "Farmer's Choice": ["farmers choice"],
+    "Helga's": ["helgas"],
+    "Kellogg's": ["kelloggs"],
+    "Leggo's": ["leggos"],
+    "Nobby's": ["nobbys"],
+    "Rafferty's Garden": ["raffertys garden"],
+    "Red Bull": ["redbull"],
+    "Smith's": ["smiths"],
+    "Spray n' Wipe": ["spray n wipe", "spray and wipe"],
+}
+
 
 def _brands_for_subcategory(spec, subcategory):
     return spec.get("subcategory_brands", {}).get(subcategory, spec["brands"])
+
+
+def _brand_aliases_for_brand(brand):
+    return BRAND_ALIASES.get(brand, [])
 
 
 def _product_name(brand, descriptor, subcategory, size):
@@ -268,6 +288,7 @@ def generate_products(n=NUM_PRODUCTS):
         products.append({
             "name": _product_name(brand, descriptor, subcat, size),
             "brand": brand,
+            "brand_aliases": _brand_aliases_for_brand(brand),
             "category": cat,
             "subcategory": subcat,
             "aliases": spec["subcategories"][subcat],
@@ -417,7 +438,8 @@ def compute_brand_popularity(history, products):
 def create_indexes(db):
     """Indexes that the search and history-lookup endpoints depend on."""
     db.products.create_index([
-        ("name", TEXT), ("aliases", TEXT), ("category", TEXT), ("subcategory", TEXT),
+        ("name", TEXT), ("aliases", TEXT), ("brand_aliases", TEXT),
+        ("category", TEXT), ("subcategory", TEXT),
     ], name="product_text_search")
     db.products.create_index([("category", ASCENDING), ("popularity_score", ASCENDING)])
     db.customers.create_index([("phone", ASCENDING)], unique=True)
@@ -425,6 +447,9 @@ def create_indexes(db):
     db.brand_popularity.create_index([("subcategory", ASCENDING), ("score", ASCENDING)])
     db.captured_orders.create_index([("customer_id", ASCENDING)])
     db.captured_orders.create_index([("created_at", ASCENDING)])
+    # Idempotency: one captured order per Vapi call_id. Backstops the
+    # early-return dedup in services.orders.save_order.
+    db.captured_orders.create_index([("call_id", ASCENDING)], unique=True)
 
 
 def seed(db):

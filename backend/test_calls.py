@@ -10,7 +10,7 @@ import mongomock
 from bson import ObjectId
 
 import app.routers.calls as calls
-from app.services import vapi_client
+from app.services import call_service, vapi_client
 
 
 # --- async adapter ----------------------------------------------------------
@@ -149,7 +149,7 @@ async def run():
     assert res["ok"] is True and "order_id" in res
     saved = _raw.captured_orders.find_one({"_id": ObjectId(res["order_id"])})
     assert saved["items"][0]["quantity"] == 2
-    assert saved["status"] == "pending_fulfilment"
+    assert saved["status"] == "pending_fulfillment"
     assert saved["call_id"] == "call-123", "call_id must come from call metadata"
     print(f"  save_order     -> saved order {res['order_id'][:8]}...")
 
@@ -297,6 +297,27 @@ async def run():
     ]
     print("  end report      -> cached transcript and recording")
 
+    # --- 8d. transcript for an unknown call_id upserts a stub --------------
+    # Without the upsert, the line is silently dropped (live SSE sees it,
+    # but the DB doesn't), so call detail is empty on reload.
+    body = {"message": {
+        "type": "transcript",
+        "transcriptType": "final",
+        "role": "user",
+        "transcript": "Hello?",
+        "timestamp": 125,
+        "call": {"id": "call-unknown-id"},
+    }}
+    resp = await calls.vapi_webhook(_FakeRequest(body), db)
+    assert resp == {"received": True}
+    saved_call = _raw.calls.find_one({"vapi_call_id": "call-unknown-id"})
+    assert saved_call is not None, "stub record must be created on unknown call_id"
+    assert saved_call["transcript"] == [
+        {"role": "customer", "text": "Hello?", "ts": 125}
+    ]
+    assert saved_call["status"] == "unknown"
+    print("  transcript      -> upsert persists line for unknown call_id")
+
     # --- 9. Vapi artifacts normalize to dashboard transcript lines ---
     lines = vapi_client.extract_transcript_lines({
         "artifact": {
@@ -312,15 +333,170 @@ async def run():
     ]
     print("  vapi artifact  -> normalized transcript lines")
 
+    lines = vapi_client.extract_transcript_lines({
+        "artifact": {
+            "messagesOpenAIFormatted": [
+                {"role": "assistant", "content": "Hi there"},
+                {"role": "user", "content": "I need apples"},
+                {
+                    "role": "assistant",
+                    "content": "Anything else?",
+                    "timestamp": 4.5,
+                },
+            ]
+        }
+    })
+    assert lines == [
+        {"role": "assistant", "text": "Hi there"},
+        {"role": "customer", "text": "I need apples"},
+        {"role": "assistant", "text": "Anything else?", "ts": 4.5},
+    ]
+    print("  openai artifact -> preserves only real timestamps")
+
     recording_url = vapi_client.extract_recording_url({
         "artifact": {
             "recording": {"stereoUrl": "https://example.test/stereo.wav"},
             "recordingUrl": "https://example.test/mono.wav",
         }
     })
-    assert recording_url == "https://example.test/mono.wav"
-    print("  recording url  -> extracted from Vapi artifact")
+    assert recording_url == "https://example.test/stereo.wav", (
+        "stereo must win over mono regardless of nesting"
+    )
+
+    # top-level stereo still wins over nested stereo (both are stereo; either is fine,
+    # but top-level is canonical per Vapi's schema).
+    recording_url = vapi_client.extract_recording_url({
+        "artifact": {
+            "stereoRecordingUrl": "https://example.test/top-stereo.wav",
+            "recording": {"stereoUrl": "https://example.test/nested-stereo.wav"},
+        }
+    })
+    assert recording_url == "https://example.test/top-stereo.wav"
+
+    # mono-only payload falls back to recordingUrl.
+    recording_url = vapi_client.extract_recording_url({
+        "artifact": {"recordingUrl": "https://example.test/mono-only.wav"}
+    })
+    assert recording_url == "https://example.test/mono-only.wav"
+    print("  recording url  -> stereo preferred, mono fallback")
 
 
 asyncio.run(run())
+
+
+# --- place_outbound_call dedupe --------------------------------------------
+async def run_dedupe():
+    """A rapid second POST /calls must NOT place a second Vapi call.
+
+    Covers the bug where /calls/new re-fires placeCall on StrictMode remount,
+    page refresh, or browser back/fwd. The dedupe collapses any retry within
+    DEDUPE_WINDOW_SECONDS to the in-flight queued call.
+    """
+    raw2 = mongomock.MongoClient()["dedupe_test"]
+    cust2 = ObjectId()
+    raw2.customers.insert_one({
+        "_id": cust2, "name": "Dedupe Customer", "phone": "+61400111222",
+        "do_not_call": False, "consent": {"given": True},
+        "preferred_language": "en",
+    })
+    db2 = _DB(raw2)
+
+    placed = []
+
+    async def fake_place_call(customer_id, phone_number, *, client=None):
+        placed.append({"customer_id": customer_id, "phone_number": phone_number})
+        return {
+            "call_id": f"vapi-{len(placed)}",
+            "status": "queued",
+            "dry_run": True,
+            "provider_status": "simulated",
+        }
+
+    original = vapi_client.place_call
+    vapi_client.place_call = fake_place_call
+    try:
+        first = await call_service.place_outbound_call(db2, str(cust2))
+        second = await call_service.place_outbound_call(db2, str(cust2))
+
+        assert first["ok"] is True
+        assert second["ok"] is True
+        assert second["call_id"] == first["call_id"], \
+            "dedupe must return the in-flight call_id"
+        assert second["call_record_id"] == first["call_record_id"]
+        assert second.get("deduped") is True
+        assert len(placed) == 1, \
+            f"Vapi must be called once, got {len(placed)}"
+        assert raw2.calls.count_documents({}) == 1, \
+            "only one call record should be written"
+        print(f"  dedupe          -> 2 POSTs -> 1 Vapi call, 1 record")
+
+        # Outside the dedupe window, a fresh POST proceeds.
+        stale = datetime.now(timezone.utc) - timedelta(
+            seconds=call_service.DEDUPE_WINDOW_SECONDS + 5
+        )
+        raw2.calls.update_one({}, {"$set": {"created_at": stale}})
+
+        third = await call_service.place_outbound_call(db2, str(cust2))
+        assert third["ok"] is True
+        assert third.get("deduped") is not True, \
+            "expired window must not dedupe"
+        assert len(placed) == 2
+        assert raw2.calls.count_documents({}) == 2
+        print("  dedupe window   -> expires after DEDUPE_WINDOW_SECONDS")
+    finally:
+        vapi_client.place_call = original
+
+
+asyncio.run(run_dedupe())
+
+
+# --- transcript-before-record race -----------------------------------------
+async def run_transcript_race():
+    """A transcript event that lands before place_outbound_call's write must
+    merge into the same record, not create a duplicate."""
+    raw3 = mongomock.MongoClient()["race_test"]
+    cust3 = ObjectId()
+    raw3.customers.insert_one({
+        "_id": cust3, "name": "Race Customer", "phone": "+61400000111",
+        "do_not_call": False, "consent": {"given": True},
+        "preferred_language": "en",
+    })
+    db3 = _DB(raw3)
+
+    # Simulate Vapi pushing a transcript line before insert_one runs.
+    await call_service.append_transcript_line(db3, "vapi-race-1", {
+        "role": "customer", "text": "Are you there?", "ts": 0,
+    })
+    assert raw3.calls.count_documents({}) == 1, "stub must be created"
+
+    async def fake_place_call(customer_id, phone_number, *, client=None):
+        return {
+            "call_id": "vapi-race-1",
+            "status": "queued",
+            "dry_run": True,
+            "provider_status": "simulated",
+        }
+
+    original = vapi_client.place_call
+    vapi_client.place_call = fake_place_call
+    try:
+        result = await call_service.place_outbound_call(db3, str(cust3))
+        assert result["ok"] is True
+        assert result["call_id"] == "vapi-race-1"
+        assert raw3.calls.count_documents({}) == 1, \
+            "race must merge into the stub, not duplicate"
+
+        saved = raw3.calls.find_one({"vapi_call_id": "vapi-race-1"})
+        assert saved["status"] == "queued"
+        assert saved["customer_id"] == cust3
+        assert saved["customer_name"] == "Race Customer"
+        assert saved["transcript"] == [
+            {"role": "customer", "text": "Are you there?", "ts": 0}
+        ], "transcript pushed before place_outbound_call must survive"
+        print("  race merge      -> early transcript merged into call record")
+    finally:
+        vapi_client.place_call = original
+
+
+asyncio.run(run_transcript_race())
 print("\nALL WEBHOOK CHECKS PASSED")

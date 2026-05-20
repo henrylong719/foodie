@@ -16,6 +16,7 @@ class Product(BaseModel):
     id: str = Field(alias="_id")
     name: str
     brand: str
+    brand_aliases: list[str] = Field(default_factory=list)
     category: str
     subcategory: str
     aliases: list[str]

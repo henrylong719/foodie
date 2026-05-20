@@ -39,8 +39,6 @@ export function StatusBadge({
       "text-[var(--color-good)] border-[color:rgba(21,128,61,0.2)] bg-[color:rgba(21,128,61,0.08)]",
     pending:
       "text-[var(--color-warn)] border-[color:rgba(184,107,23,0.22)] bg-[color:rgba(184,107,23,0.08)]",
-    pending_fulfilment:
-      "text-[var(--color-warn)] border-[color:rgba(184,107,23,0.22)] bg-[color:rgba(184,107,23,0.08)]",
     pending_fulfillment:
       "text-[var(--color-warn)] border-[color:rgba(184,107,23,0.22)] bg-[color:rgba(184,107,23,0.08)]",
     queued:

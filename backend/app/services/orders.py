@@ -35,7 +35,7 @@ async def save_order(
         call_id: the Vapi call id.
         items: confirmed items, each with product_id, name, quantity,
             brand_source.
-        transcript_url: optional link to the call transcript.
+        transcript_url: ignored. Transcripts are stored on the call record.
 
     Returns:
         { ok: True, order_id } on success, or { ok: False, error } if the
@@ -47,26 +47,102 @@ async def save_order(
     if not items:
         return {"ok": False, "error": "order has no items"}
 
-    # normalize items — keep only the fields the schema defines
-    clean_items = []
+    # Idempotency: tool-calling LLMs occasionally re-invoke save_order on retry
+    # for the same call. Return the existing order rather than creating a second
+    # row (which would double-bill / double-fulfil). The unique index on call_id
+    # (see seed.create_indexes) is the race-safe backstop.
+    if call_id:
+        existing = await db.captured_orders.find_one({"call_id": call_id})
+        if existing is not None:
+            return {"ok": True, "order_id": str(existing["_id"])}
+
+    # Validate quantity and product_id per item. Reject the whole order if any
+    # item is malformed — fulfilment downstream trusts these rows.
+    parsed: list[tuple[ObjectId, dict]] = []
     for item in items:
-        clean_items.append({
-            "product_id": str(item.get("product_id", "")),
+        qty_raw = item.get("quantity", 1)
+        # bool is a subclass of int — reject it explicitly so True/False aren't
+        # silently treated as quantity 1/0.
+        if isinstance(qty_raw, bool):
+            return {"ok": False, "error": f"invalid quantity: {qty_raw!r}"}
+        try:
+            quantity = int(qty_raw)
+        except (TypeError, ValueError):
+            return {"ok": False, "error": f"invalid quantity: {qty_raw!r}"}
+        if quantity <= 0:
+            return {"ok": False, "error": f"quantity must be positive, got {quantity}"}
+
+        pid_raw = item.get("product_id", "")
+        pid = _to_object_id(str(pid_raw))
+        if pid is None:
+            return {"ok": False, "error": f"invalid product_id: {pid_raw!r}"}
+
+        parsed.append((pid, {
+            "product_id": str(pid),
             "name": item.get("name", ""),
-            "quantity": int(item.get("quantity", 1)),
+            "quantity": quantity,
             "brand_source": item.get("brand_source", "mentioned"),
-        })
+        }))
+
+    # One round-trip to confirm every referenced product exists.
+    pids = list({pid for pid, _ in parsed})
+    found = await db.products.find(
+        {"_id": {"$in": pids}}, {"_id": 1}
+    ).to_list(length=len(pids))
+    found_ids = {f["_id"] for f in found}
+    missing = [str(pid) for pid in pids if pid not in found_ids]
+    if missing:
+        return {"ok": False, "error": f"unknown product_id(s): {', '.join(missing)}"}
+
+    # Dedupe by product_id with last-write-wins. If the LLM emits both the
+    # original and corrected line for one product (Script 9 recap correction
+    # where the customer changes quantity mid-recap), the latest entry should
+    # win rather than producing two rows for one item.
+    deduped: dict[str, dict] = {}
+    for _, clean in parsed:
+        deduped[clean["product_id"]] = clean
+    clean_items = list(deduped.values())
 
     doc = {
         "customer_id": oid,
         "call_id": call_id,
         "created_at": datetime.now(timezone.utc),
-        "status": "pending_fulfilment",
+        "status": "pending_fulfillment",
         "items": clean_items,
-        "transcript_url": transcript_url,
+        "transcript_url": None,
     }
     result = await db.captured_orders.insert_one(doc)
     return {"ok": True, "order_id": str(result.inserted_id)}
+
+
+async def get_order(
+    db: AsyncIOMotorDatabase,
+    order_id: str,
+) -> dict | None:
+    """Return one captured order with customer name and item count joined.
+
+    Returns None for invalid ids or missing rows so the router can raise 404.
+    """
+    oid = _to_object_id(order_id)
+    if oid is None:
+        return None
+
+    o = await db.captured_orders.find_one({"_id": oid})
+    if o is None:
+        return None
+
+    customer = await db.customers.find_one({"_id": o["customer_id"]})
+    return {
+        "_id": str(o["_id"]),
+        "customer_id": str(o["customer_id"]),
+        "customer_name": customer["name"] if customer else "Unknown",
+        "call_id": o.get("call_id", ""),
+        "created_at": o["created_at"].isoformat() if o.get("created_at") else None,
+        "status": o.get("status", ""),
+        "items": o.get("items", []),
+        "item_count": len(o.get("items", [])),
+        "transcript_url": o.get("transcript_url"),
+    }
 
 
 async def list_orders(

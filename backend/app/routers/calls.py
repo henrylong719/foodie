@@ -81,7 +81,18 @@ async def _dispatch(
     if name == "flag_do_not_call":
         if not customer_id:
             return {"ok": False, "error": "Missing customer context."}
-        return await orders.flag_do_not_call(db, customer_id)
+        result = await orders.flag_do_not_call(db, customer_id)
+        if result.get("ok") and call_id:
+            await hub.publish(
+                call_id,
+                {
+                    "role": "assistant",
+                    "text": "DNC flagged",
+                    "ts": 0,
+                    "type": "annotation",
+                },
+            )
+        return result
 
     return {"error": f"unknown tool: {name}"}
 

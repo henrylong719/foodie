@@ -14,7 +14,9 @@ import {
   cx,
 } from '@/components/ui';
 
-type StreamState = 'connecting' | 'connected' | 'reconnecting';
+const MAX_STREAM_RETRY_ERRORS = 5;
+
+type StreamState = 'connecting' | 'connected' | 'reconnecting' | 'lost';
 
 function isTranscriptLine(value: unknown): value is TranscriptLine {
   if (!value || typeof value !== 'object') return false;
@@ -42,7 +44,6 @@ export default function CallDetailPage({
   const [callRecord, setCallRecord] = useState<CallRecord | null>(null);
   const [streamState, setStreamState] = useState<StreamState>('connecting');
   const scrollRef = useRef<HTMLDivElement>(null);
-  const streamUrl = getCallTranscriptStreamUrl(callId);
   const hasSavedTranscript = lines.length > 0;
   const shouldStream = searchParams.get('live') === '1';
 
@@ -68,10 +69,15 @@ export default function CallDetailPage({
     if (!shouldStream) return;
 
     // SSE connection to the backend transcript relay.
+    const streamUrl = getCallTranscriptStreamUrl(callId);
     const source = new EventSource(streamUrl);
+    let retryErrors = 0;
 
     setStreamState('connecting');
-    source.onopen = () => setStreamState('connected');
+    source.onopen = () => {
+      retryErrors = 0;
+      setStreamState('connected');
+    };
 
     source.onmessage = (event) => {
       try {
@@ -85,12 +91,18 @@ export default function CallDetailPage({
     };
 
     source.onerror = () => {
-      // Keep EventSource open so the browser can use its built-in retry.
+      retryErrors += 1;
+      if (retryErrors >= MAX_STREAM_RETRY_ERRORS) {
+        source.close();
+        setStreamState('lost');
+        return;
+      }
+
       setStreamState('reconnecting');
     };
 
     return () => source.close();
-  }, [shouldStream, streamUrl]);
+  }, [callId, shouldStream]);
 
   useEffect(() => {
     scrollRef.current?.scrollTo(0, scrollRef.current.scrollHeight);
@@ -118,24 +130,28 @@ export default function CallDetailPage({
               background:
                 streamState === 'connected'
                   ? 'var(--color-good)'
+                  : streamState === 'lost'
+                    ? 'var(--color-danger)'
                   : 'var(--color-text-dim)',
             }}
           />
           <StatusBadge
-            status={streamState === 'connected' ? 'active' : 'waiting'}
+            status={
+              streamState === 'connected'
+                ? 'active'
+                : streamState === 'lost'
+                  ? 'failed'
+                  : 'waiting'
+            }
           >
             {streamState === 'connected'
               ? 'stream listener connected'
+              : streamState === 'lost'
+                ? 'stream lost - refresh to retry'
               : streamState === 'reconnecting'
                 ? 'reconnecting to call stream'
                 : 'waiting for call stream'}
           </StatusBadge>
-          <span
-            className="text-xs text-[var(--color-text-dim)]"
-            style={{ fontFamily: 'var(--font-mono)' }}
-          >
-            {streamUrl}
-          </span>
           <Link
             href="/calls"
             className="ml-auto inline-flex h-9 items-center rounded-full border border-[color:rgba(33,122,74,0.24)] bg-[color:rgba(33,122,74,0.08)] px-4 text-xs font-semibold text-[var(--color-accent)] transition hover:border-[var(--color-accent)] hover:bg-[var(--color-accent)] hover:text-white"
