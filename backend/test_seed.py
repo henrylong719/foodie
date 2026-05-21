@@ -27,10 +27,42 @@ assert isinstance(p["brand_aliases"], list), "brand_aliases must be a list"
 c = db.customers.find_one()
 for field in ("name", "phone", "do_not_call", "consent", "preferred_language"):
     assert field in c, f"customer missing field: {field}"
-assert c["phone"].startswith("+614"), "phone format wrong"
+assert c["phone"].startswith("+"), "phone format wrong"
+henry = db.customers.find_one({
+    "name": seed.DEMO_CUSTOMER_NAME,
+    "phone": seed.DEMO_CUSTOMER_PHONE,
+})
+assert henry is not None, "demo customer Henry Long missing"
+assert henry["do_not_call"] is False, "demo customer must be callable"
 
 h = db.order_history.find_one()
 assert h["items"] and "category" in h["items"][0], "history item must denormalize category"
+
+henry_history = list(db.order_history.find({"customer_id": henry["_id"]}))
+henry_items = {
+    item["name"]
+    for order in henry_history
+    for item in order["items"]
+}
+for name in (
+    "Doritos Original Corn Chips 170g",
+    "Streets Classic Ice Cream 2L",
+    "Coca-Cola Classic Soft Drink 1.25L",
+):
+    assert name in henry_items, f"Henry Long missing demo history item: {name}"
+
+latest_by_subcategory = {}
+for order in henry_history:
+    for item in order["items"]:
+        current = latest_by_subcategory.get(item["subcategory"])
+        if current is None or order["date"] > current["date"]:
+            latest_by_subcategory[item["subcategory"]] = {
+                "date": order["date"],
+                "name": item["name"],
+            }
+assert latest_by_subcategory["Chips"]["name"] == "Doritos Original Corn Chips 170g"
+assert latest_by_subcategory["Ice Cream"]["name"] == "Streets Classic Ice Cream 2L"
+assert latest_by_subcategory["Soft Drink"]["name"] == "Coca-Cola Classic Soft Drink 1.25L"
 
 # every history item references a real product id
 prod_ids = {x["_id"] for x in db.products.find({}, {"_id": 1})}

@@ -24,6 +24,8 @@ from pymongo import MongoClient, ASCENDING, TEXT
 DB_NAME = "supermarket_assistant"
 NUM_PRODUCTS = 1000
 NUM_CUSTOMERS = 50
+DEMO_CUSTOMER_NAME = "Henry Long"
+DEMO_CUSTOMER_PHONE = "+12176373205"
 
 # --------------------------------------------------------------------------
 # Catalog definition
@@ -228,6 +230,36 @@ BRAND_ALIASES = {
     "Spray n' Wipe": ["spray n wipe", "spray and wipe"],
 }
 
+DEMO_PRODUCT_SPECS = [
+    {
+        "category": "Snacks",
+        "subcategory": "Chips",
+        "brand": "Doritos",
+        "descriptor": "Original",
+        "size": "170g",
+        "unit": "packet",
+        "price": 5.0,
+    },
+    {
+        "category": "Frozen",
+        "subcategory": "Ice Cream",
+        "brand": "Streets",
+        "descriptor": "Classic",
+        "size": "2L",
+        "unit": "tub",
+        "price": 8.5,
+    },
+    {
+        "category": "Beverages",
+        "subcategory": "Soft Drink",
+        "brand": "Coca-Cola",
+        "descriptor": "Classic",
+        "size": "1.25L",
+        "unit": "bottle",
+        "price": 3.75,
+    },
+]
+
 
 def _brands_for_subcategory(spec, subcategory):
     return spec.get("subcategory_brands", {}).get(subcategory, spec["brands"])
@@ -242,6 +274,50 @@ def _product_name(brand, descriptor, subcategory, size):
         chip_type = "Corn Chips" if brand == "Doritos" else "Potato Chips"
         return f"{brand} {descriptor} {chip_type} {size}"
     return f"{brand} {descriptor} {subcategory} {size}"
+
+
+def _demo_product_doc(spec):
+    category_spec = CATEGORIES[spec["category"]]
+    return {
+        "name": _product_name(
+            spec["brand"], spec["descriptor"], spec["subcategory"], spec["size"]
+        ),
+        "brand": spec["brand"],
+        "brand_aliases": _brand_aliases_for_brand(spec["brand"]),
+        "category": spec["category"],
+        "subcategory": spec["subcategory"],
+        "aliases": category_spec["subcategories"][spec["subcategory"]],
+        "size": spec["size"],
+        "unit": spec["unit"],
+        "price": spec["price"],
+        "in_stock": True,
+        "popularity_score": 0,
+    }
+
+
+def ensure_demo_products(products):
+    """Pin stable, in-stock demo SKUs without changing the catalog size."""
+    by_name = {p["name"]: p for p in products}
+    replacement_index = len(products) - 1
+
+    for spec in DEMO_PRODUCT_SPECS:
+        doc = _demo_product_doc(spec)
+        if doc["name"] in by_name:
+            by_name[doc["name"]].update(doc)
+            continue
+
+        while replacement_index >= 0:
+            old = products[replacement_index]
+            if old["name"] not in by_name or old["name"] == doc["name"]:
+                replacement_index -= 1
+                continue
+            by_name.pop(old["name"], None)
+            products[replacement_index] = doc
+            by_name[doc["name"]] = doc
+            replacement_index -= 1
+            break
+
+    return products
 
 
 def generate_products(n=NUM_PRODUCTS):
@@ -300,7 +376,22 @@ def generate_products(n=NUM_PRODUCTS):
             # order history once orders exist. See seed().
             "popularity_score": 0,
         })
-    return products
+    return ensure_demo_products(products)
+
+
+def _demo_customer():
+    consent_date = datetime.now(timezone.utc) - timedelta(days=90)
+    return {
+        "name": DEMO_CUSTOMER_NAME,
+        "phone": DEMO_CUSTOMER_PHONE,
+        "do_not_call": False,
+        "consent": {
+            "given": True,
+            "date": consent_date,
+            "method": "demo seed",
+        },
+        "preferred_language": "en",
+    }
 
 
 def generate_customers(n=NUM_CUSTOMERS):
@@ -309,6 +400,10 @@ def generate_customers(n=NUM_CUSTOMERS):
     fake = Faker("en_AU")
     customers = []
     phones = set()
+    if n > 0:
+        demo_customer = _demo_customer()
+        customers.append(demo_customer)
+        phones.add(demo_customer["phone"])
     methods = ["in-store signup", "loyalty card registration", "online account"]
     while len(customers) < n:
         consent_date = datetime.now(timezone.utc) - timedelta(days=random.randint(30, 900))
@@ -328,6 +423,53 @@ def generate_customers(n=NUM_CUSTOMERS):
             "preferred_language": "en",
         })
     return customers
+
+
+def _history_item(product, quantity):
+    return {
+        "product_id": product["_id"],
+        "name": product["name"],
+        "category": product["category"],
+        "subcategory": product["subcategory"],
+        "quantity": quantity,
+    }
+
+
+def _product_by_name(products, name):
+    for product in products:
+        if product["name"] == name:
+            return product
+    raise ValueError(f"demo product missing from generated catalog: {name}")
+
+
+def generate_demo_order_history(customer, products):
+    """Build stable recent history for the demo customer.
+
+    Dates are within the last day so these items win the "most recent purchase"
+    lookup over any random history generated for the same customer.
+    """
+    now = datetime.now(timezone.utc)
+    doritos = _product_by_name(products, "Doritos Original Corn Chips 170g")
+    streets = _product_by_name(products, "Streets Classic Ice Cream 2L")
+    coke = _product_by_name(products, "Coca-Cola Classic Soft Drink 1.25L")
+
+    return [
+        {
+            "customer_id": customer["_id"],
+            "date": now - timedelta(hours=12),
+            "items": [_history_item(doritos, 2)],
+        },
+        {
+            "customer_id": customer["_id"],
+            "date": now - timedelta(hours=10),
+            "items": [_history_item(streets, 1)],
+        },
+        {
+            "customer_id": customer["_id"],
+            "date": now - timedelta(hours=8),
+            "items": [_history_item(coke, 3)],
+        },
+    ]
 
 
 def generate_order_history(customers, products):
@@ -350,6 +492,12 @@ def generate_order_history(customers, products):
                 "date": order_date,
                 "items": items,
             })
+    demo_customer = next(
+        (c for c in customers if c.get("phone") == DEMO_CUSTOMER_PHONE),
+        None,
+    )
+    if demo_customer:
+        history.extend(generate_demo_order_history(demo_customer, products))
     return history
 
 
