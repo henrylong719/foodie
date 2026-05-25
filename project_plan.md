@@ -112,7 +112,7 @@ popularity, so its own collection.
 ```js
 {
   _id, customer_id, call_id, created_at,
-  status: "pending_fulfilment",
+  status: "pending_fulfillment",
   items: [ { product_id, name, quantity, brand_source } ], // history|mentioned|recommended
   transcript_url
 }

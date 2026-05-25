@@ -7,6 +7,7 @@ requires-python = ">=3.12"
 dependencies = [
     "fastapi>=0.115",
     "uvicorn[standard]>=0.30",
+    "certifi>=2026.4.22",
     "motor>=3.5",
     "pymongo>=4.8",
     "pydantic>=2.8",

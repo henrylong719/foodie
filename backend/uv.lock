@@ -456,6 +456,7 @@ name = "supermarket-assistant-backend"
 version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
+    { name = "certifi" },
     { name = "faker" },
     { name = "fastapi" },
     { name = "httpx" },
@@ -474,6 +475,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "certifi", specifier = ">=2026.4.22" },
     { name = "faker", specifier = ">=27.0" },
     { name = "fastapi", specifier = ">=0.115" },
     { name = "httpx", specifier = ">=0.27" },

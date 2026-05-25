@@ -8,6 +8,7 @@ lifespan in main.py.
 The seed script uses sync pymongo separately — a one-shot script has no reason
 to be async — but points at the same cluster and database.
 """
+import certifi
 from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorDatabase
 
 from app.config import settings
@@ -23,7 +24,10 @@ _state = _Database()
 
 async def connect() -> None:
     """Open the client and verify the connection. Called on app startup."""
-    _state.client = AsyncIOMotorClient(settings.mongodb_uri)
+    _state.client = AsyncIOMotorClient(
+        settings.mongodb_uri,
+        **_client_kwargs(settings.mongodb_uri),
+    )
     await _state.client.admin.command("ping")
     _state.db = _state.client[settings.db_name]
 
@@ -52,3 +56,11 @@ async def ping() -> bool:
         return True
     except Exception:
         return False
+
+
+def _client_kwargs(uri: str) -> dict[str, object]:
+    """Return connection options that are safe for Atlas but leave local Mongo alone."""
+    normalized_uri = uri.lower()
+    if normalized_uri.startswith("mongodb+srv://") or ".mongodb.net" in normalized_uri:
+        return {"tls": True, "tlsCAFile": certifi.where()}
+    return {}

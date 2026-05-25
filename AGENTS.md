@@ -7,7 +7,7 @@ Guidelines for coding agents working in this repo. These instructions favor smal
 ## Project Notes
 
 - Backend: FastAPI app in `backend/`, managed with `uv`.
-- Frontend: React + Vite app in `frontend/`, managed with Bun workspace scripts.
+- Frontend: Next.js App Router + React + Tailwind CSS
 - Use Docker Compose when a backend database or full-stack environment is required.
 
 ## Common Commands
