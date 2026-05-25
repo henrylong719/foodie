@@ -17,10 +17,12 @@ server URL pointing at /calls/webhook — is built and configured once in the
 Vapi dashboard, following VAPI_AGENT_DESIGN.md. A live call placed without a
 configured assistant id is refused with a clear error rather than guessed.
 
-customer_id plumbing: the call is created with `customer_id` set in the
-call's `metadata`. Vapi echoes that metadata back on every webhook, which is
-exactly what routers/calls.py:_extract_customer_id reads. The voice agent
-never sees customer_id — it is backend plumbing end to end.
+customer_id plumbing: outbound calls are created with `customer_id` set in
+the call's `metadata`; Vapi echoes that metadata back on every webhook.
+Inbound calls have no metadata, so routers/calls.py:_resolve_customer_id
+falls back to looking up the caller's phone number in the customers
+collection. Either way, the voice agent never sees customer_id — it is
+backend plumbing end to end.
 
 Kept HTTP-thin and free of FastAPI types so it can be unit-tested by
 injecting a fake transport.

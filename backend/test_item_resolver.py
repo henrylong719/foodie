@@ -124,6 +124,8 @@ async def run():
     assert r["status"] == CONFIRM, f"expected CONFIRM, got {r['status']}"
     assert r["product"]["name"].startswith("Smith's")
     assert r["brand_source"] == "history"
+    assert r["available_brands"] == ["Doritos", "Smith's"]
+    assert r["next_tool"] == "resolve_brand"
     print(f"  'chips' (has hx) -> {r['status']}: {r['message']}")
 
     # --- Branch C: no brand, no history -> RECOMMEND top brand ---
@@ -182,6 +184,13 @@ async def run():
     assert r["status"] == ASK, f"expected ASK, got {r['status']}"
     assert "product" not in r
     print(f"  'Coke' brand     -> {r['status']} (ambiguous brand answer)")
+
+    r = await ir.resolve_brand(db, "Soft Drink", "Red Bull")
+    assert r["status"] == ASK, f"expected ASK, got {r['status']}"
+    assert r["alternate_product"]["brand"] == "Red Bull"
+    assert r["alternate_subcategory"] == "Energy Drink"
+    assert "Coca-Cola" in r["available_brands"]
+    print("  'Red Bull' soft drink -> ask with energy drink alternate")
 
     # --- unknown subcategory (agent hallucination) -> ASK, no brand list ---
     r = await ir.resolve_brand(db, "Cookies", "Arnott's")

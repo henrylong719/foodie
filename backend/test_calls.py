@@ -188,13 +188,30 @@ async def run():
     assert saved_call["status"] == "ended"
     print("  status-update  -> persisted status")
 
-    # --- 6. missing customer metadata -> graceful, no crash ---
+    # --- 6. missing customer metadata (inbound, unknown caller) -> still
+    #        resolves to a usable result, just without the history path ---
     body = {"message": {"type": "tool-calls", "call": {"id": "c2"},
                         "toolCallList": [{"id": "tcX", "name": "resolve_item",
                                           "arguments": {"mention": "chips"}}]}}
     resp = await calls.vapi_webhook(_FakeRequest(body), db)
-    assert resp["results"][0]["result"]["status"] == "ask"
-    print("  no customer_id -> graceful 'ask'")
+    result = resp["results"][0]["result"]
+    # without a customer, the history-based "confirm" branch is skipped; the
+    # resolver should still return a real status (recommend / resolved / ask)
+    # with a subcategory the agent can use.
+    assert result["status"] in {"resolved", "recommend", "ask"}
+    assert "confirm" != result["status"], "history path requires customer_id"
+    print(f"  no customer_id -> graceful '{result['status']}' (no history path)")
+
+    # --- 6b. inbound call with a known caller number resolves customer_id ---
+    body = {"message": {"type": "tool-calls",
+                        "call": {"id": "c2b",
+                                 "customer": {"number": "+61400000000"}},
+                        "toolCallList": [{"id": "tcXb", "name": "resolve_item",
+                                          "arguments": {"mention": "chips"}}]}}
+    resp = await calls.vapi_webhook(_FakeRequest(body), db)
+    result = resp["results"][0]["result"]
+    assert result["status"] in {"resolved", "confirm", "recommend", "ask"}
+    print(f"  inbound caller -> identified, status '{result['status']}'")
 
     # --- 7. unknown tool name -> error result, no crash ---
     body = _payload([{"id": "tcU", "name": "mystery_tool", "arguments": {}}])

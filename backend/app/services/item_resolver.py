@@ -84,6 +84,19 @@ def _natural_item_name(brand: str, subcategory: str) -> str:
     return f"{brand} {subcategory.lower()}"
 
 
+def _serialize_product(product: dict) -> dict:
+    product = dict(product)
+    product["_id"] = str(product["_id"])
+    product.pop("score", None)
+    return product
+
+
+def _format_brand_options(brands: list[str]) -> str:
+    if len(brands) <= 1:
+        return "".join(brands)
+    return f"{', '.join(brands[:-1])}, or {brands[-1]}"
+
+
 def _resolve_brand_name(
     brand: str,
     aliases_by_brand: dict[str, set[str]],
@@ -214,12 +227,20 @@ async def resolve_item(
     past = await customer_history.infer_brand_from_history(
         db, customer_id, subcategory)
     if past is not None:
+        brand_options = await _brand_options(db, subcategory)
         return {
             "status": CONFIRM, "mention": mention,
             "subcategory": subcategory, "brand_source": "history",
             "product": past,
-            "message": (f"You ordered {past['name']} last time — "
-                        f"would you like that again?"),
+            "available_brands": brand_options,
+            "next_tool": "resolve_brand",
+            "next_tool_instruction": (
+                "If the customer asks for something else or names another "
+                "brand, ask which brand they would like and call resolve_brand "
+                "with this subcategory and that brand before asking quantity."
+            ),
+            "message": (f"For {subcategory.lower()}, would you like your usual "
+                        f"{past['name']}?"),
         }
 
     # --- Stage 2c: popularity fallback — recommend the top brand ---
@@ -302,6 +323,35 @@ async def resolve_brand(
                 "message": f"Got it — {product['name']}.",
             }
     brand_options = await _brand_options(db, subcategory)
+
+    catalog_aliases = await _catalog_brand_alias_map(db)
+    catalog_brand = _resolve_brand_name(brand or "", catalog_aliases)
+    if catalog_brand is not None:
+        alternate = await db.products.find_one(
+            {"brand": catalog_brand, "in_stock": True},
+            sort=[("popularity_score", -1)],
+        )
+        if alternate is not None:
+            alternate_product = _serialize_product(alternate)
+            options = _format_brand_options(brand_options)
+            prefix = (
+                f"For {subcategory.lower()}, we have {options}. "
+                if options else ""
+            )
+            return {
+                "status": ASK, "subcategory": subcategory,
+                "available_brands": brand_options,
+                "matched_brand": catalog_brand,
+                "alternate_subcategory": alternate_product["subcategory"],
+                "alternate_product": alternate_product,
+                "brand_source": "mentioned",
+                "message": (
+                    f"{prefix}We carry {alternate_product['name']}, but it's "
+                    f"listed as {alternate_product['subcategory'].lower()}, "
+                    f"not {subcategory.lower()}. Would you like that instead?"
+                ),
+            }
+
     return {
         "status": ASK, "subcategory": subcategory,
         "available_brands": brand_options,

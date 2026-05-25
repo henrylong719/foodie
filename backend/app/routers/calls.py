@@ -35,20 +35,35 @@ class PlaceCallRequest(BaseModel):
     customer_id: str
 
 
-def _extract_customer_id(call: dict) -> str | None:
-    """Pull customer_id from call metadata.
+async def _resolve_customer_id(
+    db: AsyncIOMotorDatabase, call: dict
+) -> str | None:
+    """Resolve the caller's customer_id.
 
-    Vapi places metadata set at call-creation time on the call object. It may
-    appear as call.metadata or under assistantOverrides.metadata depending on
-    how the call was created — check both.
+    Outbound calls: the backend sets customer_id in metadata when placing the
+    call, and Vapi echoes it back here. It may appear as call.metadata or
+    under assistantOverrides.metadata depending on how the call was created.
+
+    Inbound calls: there is no metadata, so look up the caller's phone number
+    (call.customer.number, E.164) in the customers collection.
     """
     if not call:
         return None
+
     meta = call.get("metadata") or {}
-    if "customer_id" in meta:
+    if meta.get("customer_id"):
         return meta["customer_id"]
     overrides = call.get("assistantOverrides") or {}
-    return (overrides.get("metadata") or {}).get("customer_id")
+    overrides_meta = overrides.get("metadata") or {}
+    if overrides_meta.get("customer_id"):
+        return overrides_meta["customer_id"]
+
+    customer = call.get("customer") or {}
+    number = customer.get("number")
+    if not number:
+        return None
+    record = await db.customers.find_one({"phone": number}, {"_id": 1})
+    return str(record["_id"]) if record else None
 
 
 async def _dispatch(
@@ -60,10 +75,8 @@ async def _dispatch(
 ) -> object:
     """Run one tool call and return its result payload."""
     if name == "resolve_item":
-        if not customer_id:
-            return {"status": "ask", "message": "Missing customer context."}
         return await item_resolver.resolve_item(
-            db, args.get("mention", ""), customer_id
+            db, args.get("mention", ""), customer_id or ""
         )
 
     if name == "resolve_brand":
@@ -110,10 +123,14 @@ def _as_dict(value: object) -> dict:
     return {}
 
 
-def _extract_tool_call(tool_call: dict, tool_meta: dict | None = None) -> tuple[str, dict]:
+def _extract_tool_call(
+    tool_call: dict, tool_meta: dict | None = None
+) -> tuple[str, dict]:
     """Return (tool name, args) from current and legacy Vapi tool-call shapes."""
     tool_meta = tool_meta or {}
-    function = tool_call.get("function") if isinstance(tool_call.get("function"), dict) else {}
+    function = (
+        tool_call.get("function") if isinstance(tool_call.get("function"), dict) else {}
+    )
     meta_tool_call = (
         tool_meta.get("toolCall") if isinstance(tool_meta.get("toolCall"), dict) else {}
     )
@@ -241,7 +258,7 @@ async def vapi_webhook(
 
     call = message.get("call", {})
     call_id = call.get("id", "")
-    customer_id = _extract_customer_id(call)
+    customer_id = await _resolve_customer_id(db, call)
 
     results = []
     tool_meta = _tool_meta_by_call_id(message)
