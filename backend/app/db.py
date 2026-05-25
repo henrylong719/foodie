@@ -28,8 +28,12 @@ async def connect() -> None:
         settings.mongodb_uri,
         **_client_kwargs(settings.mongodb_uri),
     )
-    await _state.client.admin.command("ping")
-    _state.db = _state.client[settings.db_name]
+    try:
+        await _state.client.admin.command("ping")
+        _state.db = _state.client[settings.db_name]
+    except Exception:
+        await disconnect()
+        raise
 
 
 async def disconnect() -> None:
@@ -60,7 +64,11 @@ async def ping() -> bool:
 
 def _client_kwargs(uri: str) -> dict[str, object]:
     """Return connection options that are safe for Atlas but leave local Mongo alone."""
+    kwargs: dict[str, object] = {
+        "connectTimeoutMS": 5000,
+        "serverSelectionTimeoutMS": 5000,
+    }
     normalized_uri = uri.lower()
     if normalized_uri.startswith("mongodb+srv://") or ".mongodb.net" in normalized_uri:
-        return {"tls": True, "tlsCAFile": certifi.where()}
-    return {}
+        kwargs.update({"tls": True, "tlsCAFile": certifi.where()})
+    return kwargs

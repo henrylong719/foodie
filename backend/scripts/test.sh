@@ -8,6 +8,7 @@ export DEBUG=false
 tests=(
   test_config.py
   test_db.py
+  test_startup_degraded.py
   smoke_test.py
   test_seed.py
   test_resolution.py

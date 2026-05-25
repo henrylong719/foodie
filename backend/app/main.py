@@ -4,6 +4,7 @@ FastAPI application entry point.
 Wires up: DB connect/disconnect via lifespan, CORS for the Next.js frontend,
 the feature routers, and a /health endpoint that verifies the DB connection.
 """
+import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -13,14 +14,21 @@ from app import db
 from app.config import settings
 from app.routers import calls, customers, orders, products
 
+logger = logging.getLogger(__name__)
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # startup
-    await db.connect()
-    yield
-    # shutdown
-    await db.disconnect()
+    try:
+        await db.connect()
+    except Exception:
+        logger.exception("Database connection failed during startup; continuing in degraded mode")
+    try:
+        yield
+    finally:
+        # shutdown
+        await db.disconnect()
 
 
 app = FastAPI(title=settings.app_name, debug=settings.debug, lifespan=lifespan)
