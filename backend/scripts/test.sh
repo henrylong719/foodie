@@ -6,6 +6,7 @@ cd "$(dirname "$0")/.."
 export DEBUG=false
 
 tests=(
+  test_config.py
   smoke_test.py
   test_seed.py
   test_resolution.py

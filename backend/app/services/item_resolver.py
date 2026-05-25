@@ -16,6 +16,7 @@ Decision tree:
      c. A popular brand exists for the subcategory  -> RECOMMEND (popularity)
      d. Nothing to go on                            -> ASK
 """
+
 import re
 
 from motor.motor_asyncio import AsyncIOMotorDatabase
@@ -23,10 +24,11 @@ from motor.motor_asyncio import AsyncIOMotorDatabase
 from app.services import customer_history, resolution
 
 # resolution statuses returned to the agent
-RESOLVED = "resolved"      # exact product locked in
-CONFIRM = "confirm"        # propose a product, agent must confirm
-RECOMMEND = "recommend"    # suggest a brand, agent must confirm
-ASK = "ask"                # nothing to go on, agent must ask
+RESOLVED = "resolved"  # exact product locked in
+CONFIRM = "confirm"  # propose a product, agent must confirm
+RECOMMEND = "recommend"  # suggest a brand, agent must confirm
+ASK = "ask"  # nothing to go on, agent must ask
+
 
 def _normalize_phrase(value: str) -> str:
     """Normalize spoken text for brand matching."""
@@ -181,8 +183,11 @@ async def resolve_item(
     """
     mention = (mention or "").strip()
     if not mention:
-        return {"status": ASK, "mention": mention,
-                "message": "I didn't catch that — could you say it again?"}
+        return {
+            "status": ASK,
+            "mention": mention,
+            "message": "I didn't catch that — could you say it again?",
+        }
 
     # --- detect a brand in the mention, search on the product term only ---
     aliases_by_brand = await _catalog_brand_alias_map(db)
@@ -203,8 +208,11 @@ async def resolve_item(
     if not candidates and named_brand is not None:
         candidates = await resolution.search_products(db, mention, limit=10)
     if not candidates:
-        return {"status": ASK, "mention": mention,
-                "message": f"I couldn't find '{mention}' — could you describe it differently?"}
+        return {
+            "status": ASK,
+            "mention": mention,
+            "message": f"I couldn't find '{mention}' — could you describe it differently?",
+        }
 
     subcategory = candidates[0]["subcategory"]
 
@@ -216,21 +224,24 @@ async def resolve_item(
             # confirm a SKU we can't actually fulfil.
             if product["brand"] == named_brand and product.get("in_stock", False):
                 return {
-                    "status": RESOLVED, "mention": mention,
-                    "subcategory": subcategory, "brand_source": "mentioned",
+                    "status": RESOLVED,
+                    "mention": mention,
+                    "subcategory": subcategory,
+                    "brand_source": "mentioned",
                     "product": product,
                     "message": f"Got it — {product['name']}.",
                 }
         # brand named but not available (or all OOS) — continue to fallback
 
     # --- Stage 2b: history-first — did they buy this subcategory before? ---
-    past = await customer_history.infer_brand_from_history(
-        db, customer_id, subcategory)
+    past = await customer_history.infer_brand_from_history(db, customer_id, subcategory)
     if past is not None:
         brand_options = await _brand_options(db, subcategory)
         return {
-            "status": CONFIRM, "mention": mention,
-            "subcategory": subcategory, "brand_source": "history",
+            "status": CONFIRM,
+            "mention": mention,
+            "subcategory": subcategory,
+            "brand_source": "history",
             "product": past,
             "available_brands": brand_options,
             "next_tool": "resolve_brand",
@@ -239,8 +250,9 @@ async def resolve_item(
                 "brand, ask which brand they would like and call resolve_brand "
                 "with this subcategory and that brand before asking quantity."
             ),
-            "message": (f"For {subcategory.lower()}, would you like your usual "
-                        f"{past['name']}?"),
+            "message": (
+                f"For {subcategory.lower()}, would you like your usual {past['name']}?"
+            ),
         }
 
     # --- Stage 2c: popularity fallback — recommend the top brand ---
@@ -249,8 +261,11 @@ async def resolve_item(
     brand_options = await _brand_options(db, subcategory)
     for top in await resolution.get_top_brands(db, subcategory):
         recommended_product = next(
-            (product for product in candidates
-             if product["brand"] == top["brand"] and product.get("in_stock", False)),
+            (
+                product
+                for product in candidates
+                if product["brand"] == top["brand"] and product.get("in_stock", False)
+            ),
             None,
         )
         if recommended_product is None:
@@ -260,17 +275,24 @@ async def resolve_item(
             "name": _natural_item_name(top["brand"], subcategory),
         }
         return {
-            "status": RECOMMEND, "mention": mention,
-            "subcategory": subcategory, "brand_source": "recommended",
-            "brand": top["brand"], "available_brands": brand_options,
+            "status": RECOMMEND,
+            "mention": mention,
+            "subcategory": subcategory,
+            "brand_source": "recommended",
+            "brand": top["brand"],
+            "available_brands": brand_options,
             "product": recommended_product,
-            "message": (f"Our most popular {subcategory.lower()} is "
-                        f"{top['brand']} — would you like that?"),
+            "message": (
+                f"Our most popular {subcategory.lower()} is "
+                f"{top['brand']} — would you like that?"
+            ),
         }
 
     # --- Stage 2d: nothing to go on — ask ---
     return {
-        "status": ASK, "mention": mention, "subcategory": subcategory,
+        "status": ASK,
+        "mention": mention,
+        "subcategory": subcategory,
         "available_brands": brand_options,
         "next_tool": "resolve_brand",
         "next_tool_instruction": (
@@ -299,11 +321,10 @@ async def resolve_brand(
     # hallucinate (e.g. "Cookies" for "Biscuits"). Without this check,
     # search_products would fall back to $text and return unrelated hits,
     # producing a brand list that has nothing to do with what was asked.
-    if not subcategory or not await db.products.find_one(
-        {"subcategory": subcategory}
-    ):
+    if not subcategory or not await db.products.find_one({"subcategory": subcategory}):
         return {
-            "status": ASK, "subcategory": subcategory,
+            "status": ASK,
+            "subcategory": subcategory,
             "available_brands": [],
             "message": (
                 f"Sorry, we don't carry {subcategory or 'that'} — "
@@ -318,8 +339,10 @@ async def resolve_brand(
     for product in candidates:
         if product["brand"] == resolved_brand:
             return {
-                "status": RESOLVED, "subcategory": subcategory,
-                "brand_source": "mentioned", "product": product,
+                "status": RESOLVED,
+                "subcategory": subcategory,
+                "brand_source": "mentioned",
+                "product": product,
                 "message": f"Got it — {product['name']}.",
             }
     brand_options = await _brand_options(db, subcategory)
@@ -335,11 +358,11 @@ async def resolve_brand(
             alternate_product = _serialize_product(alternate)
             options = _format_brand_options(brand_options)
             prefix = (
-                f"For {subcategory.lower()}, we have {options}. "
-                if options else ""
+                f"For {subcategory.lower()}, we have {options}. " if options else ""
             )
             return {
-                "status": ASK, "subcategory": subcategory,
+                "status": ASK,
+                "subcategory": subcategory,
                 "available_brands": brand_options,
                 "matched_brand": catalog_brand,
                 "alternate_subcategory": alternate_product["subcategory"],
@@ -353,8 +376,11 @@ async def resolve_brand(
             }
 
     return {
-        "status": ASK, "subcategory": subcategory,
+        "status": ASK,
+        "subcategory": subcategory,
         "available_brands": brand_options,
-        "message": (f"Sorry, we don't have {brand} in {subcategory.lower()} — "
-                    f"is there another brand you'd like?"),
+        "message": (
+            f"Sorry, we don't have {brand} in {subcategory.lower()} — "
+            f"is there another brand you'd like?"
+        ),
     }

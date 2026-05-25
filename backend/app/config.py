@@ -1,6 +1,10 @@
 """Application settings, loaded from environment / .env file."""
 
-from pydantic_settings import BaseSettings, SettingsConfigDict
+import json
+from typing import Annotated
+
+from pydantic import field_validator
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 
 class Settings(BaseSettings):
@@ -11,10 +15,24 @@ class Settings(BaseSettings):
     db_name: str = "supermarket_assistant"
 
     # CORS — the Next.js frontend origin(s)
-    frontend_origins: list[str] = [
+    frontend_origins: Annotated[list[str], NoDecode] = [
         "http://localhost:3000",
         "http://127.0.0.1:3000",
     ]
+
+    @field_validator("frontend_origins", mode="before")
+    @classmethod
+    def parse_frontend_origins(cls, value: str | list[str]) -> list[str]:
+        if isinstance(value, list):
+            return value
+        value = value.strip()
+        if not value:
+            return []
+        if value.startswith("["):
+            loaded = json.loads(value)
+            if isinstance(loaded, list):
+                return loaded
+        return [origin.strip() for origin in value.split(",") if origin.strip()]
 
     # App
     app_name: str = "AI Phone Call Sales Assistant"
