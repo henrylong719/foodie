@@ -11,10 +11,18 @@ import type {
   Product,
 } from './types';
 
-const API_BASE = '/api';
+const BACKEND_API_BASE = (
+  process.env.BACKEND_API_BASE ??
+  process.env.NEXT_PUBLIC_API_BASE ??
+  'http://localhost:8000'
+).replace(/\/+$/, '');
+
+function apiBase(): string {
+  return typeof window === 'undefined' ? BACKEND_API_BASE : '/api';
+}
 
 async function get<T>(path: string): Promise<T> {
-  const res = await fetch(`${API_BASE}${path}`, { cache: 'no-store' });
+  const res = await fetch(`${apiBase()}${path}`, { cache: 'no-store' });
   if (!res.ok) {
     throw new Error(`API ${path} failed: ${res.status}`);
   }
@@ -81,7 +89,7 @@ export class CallBlockedError extends Error {
 // Place an outbound call. Resolves with the placed-call result, or throws
 // CallBlockedError (compliance) / Error (any other failure).
 export async function placeCall(customerId: string): Promise<PlaceCallResult> {
-  const res = await fetch(`${API_BASE}/calls`, {
+  const res = await fetch(`${apiBase()}/calls`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ customer_id: customerId }),
@@ -115,7 +123,7 @@ export async function getCall(vapiCallId: string): Promise<CallRecord> {
 }
 
 export function getCallTranscriptStreamUrl(vapiCallId: string): string {
-  return `${API_BASE}/calls/${encodeURIComponent(vapiCallId)}/stream`;
+  return `${apiBase()}/calls/${encodeURIComponent(vapiCallId)}/stream`;
 }
 
-export { API_BASE };
+export const API_BASE = BACKEND_API_BASE;
