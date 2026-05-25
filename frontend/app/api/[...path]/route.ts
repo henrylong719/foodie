@@ -32,10 +32,16 @@ async function proxy(request: NextRequest, context: RouteContext) {
     cache: 'no-store',
   } as RequestInit & { duplex: 'half' });
 
+  const responseHeaders = new Headers(response.headers);
+  responseHeaders.delete('content-encoding');
+  responseHeaders.delete('content-length');
+  responseHeaders.delete('transfer-encoding');
+  responseHeaders.delete('connection');
+
   return new Response(response.body, {
     status: response.status,
     statusText: response.statusText,
-    headers: response.headers,
+    headers: responseHeaders,
   });
 }
 
