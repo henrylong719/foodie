@@ -36,6 +36,9 @@ def run():
     asyncio.run(_test_failed_connect_cleans_state())
     print("  failed startup  -> state cleaned")
 
+    asyncio.run(_test_ping_reconnects_without_client())
+    print("  health ping     -> reconnects when needed")
+
 
 async def _test_failed_connect_cleans_state():
     original_client = db.AsyncIOMotorClient
@@ -65,6 +68,37 @@ class _FailingClient:
 class _FailingAdmin:
     async def command(self, name):
         raise RuntimeError("ping failed")
+
+
+async def _test_ping_reconnects_without_client():
+    original_client = db.AsyncIOMotorClient
+    try:
+        db.AsyncIOMotorClient = _WorkingClient
+        await db.disconnect()
+
+        assert await db.ping() is True
+        assert isinstance(db._state.client, _WorkingClient)
+        assert db._state.db == "database:supermarket_assistant"
+    finally:
+        await db.disconnect()
+        db.AsyncIOMotorClient = original_client
+
+
+class _WorkingClient:
+    def __init__(self, uri, **kwargs):
+        self.admin = _WorkingAdmin()
+        self.closed = False
+
+    def __getitem__(self, name):
+        return f"database:{name}"
+
+    def close(self):
+        self.closed = True
+
+
+class _WorkingAdmin:
+    async def command(self, name):
+        return {"ok": 1}
 
 
 run()

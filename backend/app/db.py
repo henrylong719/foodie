@@ -54,7 +54,11 @@ def get_db() -> AsyncIOMotorDatabase:
 async def ping() -> bool:
     """True if the database responds. Used by the /health endpoint."""
     if _state.client is None:
-        return False
+        try:
+            await connect()
+            return True
+        except Exception:
+            return False
     try:
         await _state.client.admin.command("ping")
         return True
