@@ -243,6 +243,17 @@ export function EmptyState({
   );
 }
 
+export function Skeleton({ className }: { className?: string }) {
+  return (
+    <div
+      className={cx(
+        "animate-pulse rounded-md bg-[color:rgba(32,35,31,0.07)]",
+        className,
+      )}
+    />
+  );
+}
+
 export function ErrorNote({ message }: { message: string }) {
   const is404 = message.includes("404");
   const isConn =
