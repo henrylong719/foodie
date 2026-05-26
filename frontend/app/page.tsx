@@ -44,7 +44,10 @@ export default async function OverviewPage() {
     customers?.customers.filter((c) => !c.do_not_call).length ?? 0;
   const doNotCall =
     customers?.customers.filter((c) => c.do_not_call).length ?? 0;
-  const inStock = products?.products.filter((p) => p.in_stock).length ?? 0;
+  const inStock =
+    products?.in_stock_count ??
+    products?.products.filter((p) => p.in_stock).length ??
+    0;
   const outOfStock = products ? products.count - inStock : 0;
   const stockRate =
     products && products.count > 0

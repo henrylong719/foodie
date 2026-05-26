@@ -32,7 +32,7 @@ async function get<T>(path: string): Promise<T> {
 // --- products ---
 export async function listProducts(
   category?: string,
-): Promise<{ count: number; products: Product[] }> {
+): Promise<{ count: number; in_stock_count: number; products: Product[] }> {
   const params = new URLSearchParams({ limit: '200' });
   if (category) params.set('category', category);
   const q = `?${params.toString()}`;

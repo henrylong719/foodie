@@ -15,7 +15,11 @@ class SearchResult(BaseModel):
     products: list[dict]
 
 
-@router.get("", response_model=SearchResult)
+class ProductListResult(SearchResult):
+    in_stock_count: int
+
+
+@router.get("", response_model=ProductListResult)
 async def list_products(
     category: str | None = Query(None, description="Filter by category"),
     limit: int = Query(50, ge=1, le=200),
@@ -23,13 +27,20 @@ async def list_products(
 ):
     """Browse the catalog, optionally filtered by category."""
     query = {"category": category} if category else {}
+    total = await db.products.count_documents(query)
+    in_stock_count = await db.products.count_documents({**query, "in_stock": True})
     docs = await db.products.find(query).sort(
         "popularity_score", -1).to_list(length=limit)
     products = []
     for p in docs:
         p["_id"] = str(p["_id"])
         products.append(p)
-    return SearchResult(query=category or "all", count=len(products), products=products)
+    return ProductListResult(
+        query=category or "all",
+        count=total,
+        in_stock_count=in_stock_count,
+        products=products,
+    )
 
 
 @router.get("/categories")
