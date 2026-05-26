@@ -1,0 +1,114 @@
+@import "tailwindcss";
+
+/*
+  Design system: modern operations dashboard.
+  Quiet surfaces, crisp borders, strong readability, and purposeful accents.
+  Fonts are loaded via a <link> tag in layout.tsx (a CSS @import cannot
+  follow the inlined Tailwind import).
+*/
+
+@theme {
+  --color-bg: #f8f6f0;
+  --color-surface: #ffffff;
+  --color-surface-2: #f1f5ee;
+  --color-surface-3: #e4eadf;
+  --color-border: #dedbd0;
+  --color-border-strong: #c7c2b5;
+  --color-text: #20231f;
+  --color-text-dim: #686f63;
+  --color-accent: #217a4a;
+  --color-accent-dim: #a9d8bd;
+  --color-good: #1f7a3d;
+  --color-warn: #b46b19;
+  --color-danger: #b4443d;
+
+  --font-display: "Fraunces", Georgia, serif;
+  --font-body: "Geist", system-ui, sans-serif;
+  --font-mono: "Geist Mono", "SF Mono", monospace;
+}
+
+* {
+  border-color: var(--color-border);
+}
+
+html,
+body {
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-family: var(--font-body);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+body {
+  background-image:
+    radial-gradient(circle at top left, rgba(33, 122, 74, 0.08), transparent 32rem),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.68), rgba(248, 246, 240, 0));
+  line-height: 1.5;
+}
+
+a,
+button {
+  outline-offset: 3px;
+}
+
+button {
+  cursor: pointer;
+}
+
+a:focus-visible,
+button:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 3px;
+}
+
+::selection {
+  background: var(--color-accent);
+  color: white;
+}
+
+/* thin scrollbars that suit the console feel */
+::-webkit-scrollbar {
+  width: 9px;
+  height: 9px;
+}
+::-webkit-scrollbar-track {
+  background: var(--color-surface-2);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--color-border);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-border-strong);
+}
+
+@keyframes pulse-live {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+
+.live-dot {
+  animation: pulse-live 1.4s ease-in-out infinite;
+}
+
+@keyframes row-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.row-in {
+  animation: row-in 0.3s ease both;
+}
