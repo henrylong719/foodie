@@ -84,5 +84,10 @@ class Settings(BaseSettings):
     # run outside the window). The do_not_call check is NEVER bypassed.
     calling_hours_override: bool = False
 
+    # Demo-only operations (/demo/reset) are only enabled when this is true.
+    # Lets the dashboard wipe captured orders + un-DNC the demo customer
+    # between takes without re-running the seed script.
+    demo_mode: bool = False
+
 
 settings = Settings()

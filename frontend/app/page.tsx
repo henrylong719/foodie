@@ -12,6 +12,7 @@ import {
   Skeleton,
   StatusBadge,
 } from "@/components/ui";
+import { DemoResetButton } from "@/components/DemoResetButton";
 
 export const dynamic = "force-dynamic";
 
@@ -30,6 +31,10 @@ export default function OverviewPage() {
       />
 
       <PageContent className="space-y-8">
+        <div className="flex justify-end">
+          <DemoResetButton />
+        </div>
+
         <Suspense fallback={<StatsGridSkeleton />}>
           <StatsGrid />
         </Suspense>
@@ -179,7 +184,7 @@ async function RecentOrders() {
       {recent.map((o, i) => (
         <Link
           key={o._id}
-          href={`/orders`}
+          href={`/orders/${o._id}`}
           className={`flex items-center gap-4 px-4 py-4 text-sm transition hover:bg-[var(--color-surface-2)] sm:px-5 ${
             i > 0 ? "border-t" : ""
           }`}

@@ -12,7 +12,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app import db
 from app.config import settings
-from app.routers import calls, customers, orders, products
+from app.routers import calls, customers, demo, orders, products
 
 logger = logging.getLogger(__name__)
 
@@ -45,13 +45,22 @@ app.include_router(products.router)
 app.include_router(customers.router)
 app.include_router(orders.router)
 app.include_router(calls.router)
+app.include_router(demo.router)
 
 
 @app.get("/health", tags=["health"])
 async def health():
-    """Liveness + DB connectivity check."""
+    """Liveness + DB connectivity check.
+
+    `demo_mode` is surfaced so the dashboard can conditionally show the
+    reset affordance without a separate config endpoint.
+    """
     db_ok = await db.ping()
-    return {"status": "ok" if db_ok else "degraded", "database": db_ok}
+    return {
+        "status": "ok" if db_ok else "degraded",
+        "database": db_ok,
+        "demo_mode": settings.demo_mode,
+    }
 
 
 @app.get("/", tags=["health"])

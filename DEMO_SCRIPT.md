@@ -171,6 +171,34 @@ Important dry-run note:
   will be captured.
 - For the full spoken order demo, use live Vapi configuration.
 
+## Opening: the two hard problems (~30 seconds)
+
+Lead with the problem, not the dashboard. The audience needs to know what's
+hard about this before they can appreciate the solution.
+
+Operator script:
+
+```text
+Customers don't order in SKUs. They say "chips", "ice cream", "some Coke".
+And they rarely name a brand.
+
+If you let an LLM run free with that, you get two failure modes:
+  1. Hallucinated products — the AI invents a SKU we don't stock.
+  2. Wrong quantities — "a couple" gets saved as 2, or 6, or 1.
+
+Foodie solves both with function calling. The voice agent never sees the
+catalog. It captures what the customer says, calls a backend tool to
+resolve it against the real catalog, and reads the full list back before
+saving. Today I'll show you the call, the resolution, and the order it
+produces.
+```
+
+Operator note:
+
+- Don't open the dashboard yet — keep eyes on you while you frame the problem.
+- The phrase "function calling, not prompting" lands well; the alternative
+  (stuffing 1000 products into the prompt) is the obvious wrong answer.
+
 ## Part 1: Dashboard Readiness Walkthrough
 
 Goal: show that Foodie has the data needed for outbound AI ordering.
@@ -179,22 +207,30 @@ Operator script:
 
 ```text
 Open Overview.
-Point out captured orders, customers, callable customers, and catalog items.
+This is the staff console. It tells the operator who is callable, what
+orders have been captured, and whether the catalog is ready.
 
 Open Catalog.
-Filter to Snacks, Frozen, then Beverages.
-Point out stock status, category/subcategory, price, and popularity.
+Filter to Snacks, Frozen, then Beverages — these are the spoken-demo paths.
+Each item has aliases ("chips", "crisps", "potato chips") — that's what
+makes resolution possible.
 
 Open Customers.
-Find Henry Long and click Call.
+Find Henry Long. The Call button enforces the compliance gate (do-not-call,
+calling hours) before it dials.
 ```
 
 Operator note:
 
 - If the customer is do-not-call, the Call action should be hidden and the row
-  should show a locked status.
+  should show a locked status. This is worth a 5-second pause: "the compliance
+  gate is system-level, not a prompt instruction."
 - If the call is blocked for calling hours, turn on `CALLING_HOURS_OVERRIDE`
   and restart the backend before continuing.
+- Pre-flight: run `bash ./scripts/demo_check.sh` from `backend/` before the
+  demo. It verifies the backend is up, MongoDB is reachable, Vapi config is
+  live (not dry-run), the demo customer is callable with the canonical
+  history, and the webhook tunnel is responding.
 
 ## Part 2: Primary Shopper Places an Order
 

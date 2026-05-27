@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { use, useEffect, useRef, useState } from 'react';
+import { use, useCallback, useEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { getCall, getCallTranscriptStreamUrl } from '@/lib/api';
 import type { CallRecord, TranscriptLine } from '@/lib/types';
@@ -14,9 +14,11 @@ import {
   cx,
 } from '@/components/ui';
 
-const MAX_STREAM_RETRY_ERRORS = 5;
+type StreamState = 'connecting' | 'connected' | 'reconnecting';
 
-type StreamState = 'connecting' | 'connected' | 'reconnecting' | 'lost';
+function lineKey(line: TranscriptLine): string {
+  return `${line.role}|${line.ts ?? 0}|${line.text}`;
+}
 
 function isTranscriptLine(value: unknown): value is TranscriptLine {
   if (!value || typeof value !== 'object') return false;
@@ -44,8 +46,25 @@ export default function CallDetailPage({
   const [callRecord, setCallRecord] = useState<CallRecord | null>(null);
   const [streamState, setStreamState] = useState<StreamState>('connecting');
   const scrollRef = useRef<HTMLDivElement>(null);
+  const seenKeysRef = useRef<Set<string>>(new Set());
   const hasSavedTranscript = lines.length > 0;
   const shouldStream = searchParams.get('live') === '1';
+
+  // Merge dedupes by role+ts+text — safe to call from the initial fetch,
+  // every SSE message, and the on-reconnect backfill without duplicating lines.
+  const mergeLines = useCallback((incoming: TranscriptLine[]) => {
+    if (incoming.length === 0) return;
+    setLines((prev) => {
+      const next = prev.slice();
+      for (const line of incoming) {
+        const key = lineKey(line);
+        if (seenKeysRef.current.has(key)) continue;
+        seenKeysRef.current.add(key);
+        next.push(line);
+      }
+      return next;
+    });
+  }, []);
 
   useEffect(() => {
     let alive = true;
@@ -54,7 +73,7 @@ export default function CallDetailPage({
         if (!alive) return;
         setCallRecord(record);
         if (record.transcript?.length) {
-          setLines(record.transcript);
+          mergeLines(record.transcript);
         }
       })
       .catch(() => {
@@ -63,27 +82,39 @@ export default function CallDetailPage({
     return () => {
       alive = false;
     };
-  }, [callId]);
+  }, [callId, mergeLines]);
 
   useEffect(() => {
     if (!shouldStream) return;
 
-    // SSE connection to the backend transcript relay.
+    // SSE connection to the backend transcript relay. EventSource auto-
+    // reconnects on transport errors; on each successful (re)connect after
+    // the first we refetch the call record to backfill anything missed
+    // during the gap. Dedup in mergeLines makes the backfill safe.
     const streamUrl = getCallTranscriptStreamUrl(callId);
     const source = new EventSource(streamUrl);
-    let retryErrors = 0;
+    let hasConnectedOnce = false;
 
     setStreamState('connecting');
     source.onopen = () => {
-      retryErrors = 0;
+      const isReconnect = hasConnectedOnce;
+      hasConnectedOnce = true;
       setStreamState('connected');
+      if (isReconnect) {
+        getCall(callId)
+          .then((record) => {
+            setCallRecord(record);
+            if (record.transcript?.length) mergeLines(record.transcript);
+          })
+          .catch(() => {});
+      }
     };
 
     source.onmessage = (event) => {
       try {
         const line = JSON.parse(event.data);
         if (isTranscriptLine(line)) {
-          setLines((prev) => [...prev, line]);
+          mergeLines([line]);
         }
       } catch {
         // ignore keep-alive / non-JSON pings
@@ -91,18 +122,12 @@ export default function CallDetailPage({
     };
 
     source.onerror = () => {
-      retryErrors += 1;
-      if (retryErrors >= MAX_STREAM_RETRY_ERRORS) {
-        source.close();
-        setStreamState('lost');
-        return;
-      }
-
+      // EventSource handles reconnect itself; surface the state and wait.
       setStreamState('reconnecting');
     };
 
     return () => source.close();
-  }, [callId, shouldStream]);
+  }, [callId, shouldStream, mergeLines]);
 
   useEffect(() => {
     scrollRef.current?.scrollTo(0, scrollRef.current.scrollHeight);
@@ -130,24 +155,14 @@ export default function CallDetailPage({
               background:
                 streamState === 'connected'
                   ? 'var(--color-good)'
-                  : streamState === 'lost'
-                    ? 'var(--color-danger)'
                   : 'var(--color-text-dim)',
             }}
           />
           <StatusBadge
-            status={
-              streamState === 'connected'
-                ? 'active'
-                : streamState === 'lost'
-                  ? 'failed'
-                  : 'waiting'
-            }
+            status={streamState === 'connected' ? 'active' : 'waiting'}
           >
             {streamState === 'connected'
               ? 'stream listener connected'
-              : streamState === 'lost'
-                ? 'stream lost - refresh to retry'
               : streamState === 'reconnecting'
                 ? 'reconnecting to call stream'
                 : 'waiting for call stream'}
