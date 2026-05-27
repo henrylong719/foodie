@@ -58,7 +58,7 @@ The project is split into a FastAPI backend and a Next.js frontend:
 
 - Python 3.12+
 - `uv`
-- Bun
+- pnpm
 - MongoDB connection string, either local or Atlas
 - Optional: Vapi account credentials for real outbound calls
 
@@ -108,7 +108,7 @@ Frontend:
 
 ```bash
 cd frontend
-bun install
+pnpm install
 ```
 
 ## Seed Data
@@ -140,7 +140,7 @@ Start the frontend:
 
 ```bash
 cd frontend
-bun run dev
+pnpm dev
 ```
 
 Frontend URL:
@@ -160,14 +160,14 @@ Frontend lint:
 
 ```bash
 cd frontend
-bun run lint
+pnpm lint
 ```
 
 Frontend build:
 
 ```bash
 cd frontend
-bun run build
+pnpm build
 ```
 
 ## API Overview
