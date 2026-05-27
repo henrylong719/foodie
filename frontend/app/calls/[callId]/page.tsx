@@ -47,6 +47,20 @@ export default function CallDetailPage({
   const hasSavedTranscript = lines.length > 0;
   const shouldStream = searchParams.get('live') === '1';
 
+  // Vapi finalizes transcript segments on silence, not turn boundaries, so a
+  // single utterance can arrive as several same-role lines. Merge consecutive
+  // same-role lines into one bubble for display; the underlying lines array
+  // stays intact.
+  const groupedLines = lines.reduce<TranscriptLine[]>((acc, line) => {
+    const last = acc[acc.length - 1];
+    if (last && last.role === line.role) {
+      acc[acc.length - 1] = { ...last, text: `${last.text} ${line.text}`.trim() };
+      return acc;
+    }
+    acc.push(line);
+    return acc;
+  }, []);
+
   useEffect(() => {
     let alive = true;
     getCall(callId)
@@ -241,7 +255,7 @@ export default function CallDetailPage({
                   : 'This call record does not have saved transcript lines yet. If Vapi has a transcript for it, refresh once the backend has fetched and cached the Vapi call artifact.'}
               </EmptyState>
             ) : (
-              lines.map((line, i) => (
+              groupedLines.map((line, i) => (
                 <div
                   key={i}
                   className={cx(
