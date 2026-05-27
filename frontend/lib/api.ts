@@ -126,4 +126,32 @@ export function getCallTranscriptStreamUrl(vapiCallId: string): string {
   return `${apiBase()}/calls/${encodeURIComponent(vapiCallId)}/stream`;
 }
 
+// --- demo helpers ---
+
+export interface HealthStatus {
+  status: 'ok' | 'degraded';
+  database: boolean;
+  demo_mode?: boolean;
+}
+
+export async function getHealth(): Promise<HealthStatus> {
+  return get(`/health`);
+}
+
+export async function resetDemo(): Promise<{
+  ok: boolean;
+  captured_orders_deleted: number;
+  calls_deleted: number;
+  demo_customer_reset: boolean;
+}> {
+  const res = await fetch(`${apiBase()}/demo/reset`, { method: 'POST' });
+  if (!res.ok) {
+    const body = await res.json().catch(() => null);
+    const detail =
+      typeof body?.detail === 'string' ? body.detail : `HTTP ${res.status}`;
+    throw new Error(detail);
+  }
+  return res.json();
+}
+
 export const API_BASE = BACKEND_API_BASE;
