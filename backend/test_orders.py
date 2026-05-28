@@ -125,15 +125,27 @@ async def run():
     phantom = str(ObjectId())
     res = await orders.save_order(db, str(CUST), "call-x", [_item(product_id=phantom)])
     assert res["ok"] is False
-    assert "unknown product_id" in res["error"]
-    assert phantom in res["error"]
+    assert "unknown product" in res["error"]
     print("  unknown product -> rejected")
 
     # --- 8. malformed product_id (not an ObjectId) ---
     res = await orders.save_order(db, str(CUST), "call-x", [_item(product_id="deadbeef")])
     assert res["ok"] is False
-    assert "invalid product_id" in res["error"]
+    assert "unknown product" in res["error"]
     print("  bad product_id -> rejected")
+
+    # --- 8b. bad product_id but exact name match recovers ---
+    # LLMs occasionally fabricate product_ids at recap time. When the spoken
+    # name still matches a real product, save_order recovers rather than
+    # killing the whole call. This is the bug fix path.
+    res = await orders.save_order(
+        db, str(CUST), "call-recover",
+        [_item(product_id=phantom, name="Smith's Original Potato Chips 150g")],
+    )
+    assert res["ok"] is True, res
+    saved = _raw.captured_orders.find_one({"call_id": "call-recover"})
+    assert saved["items"][0]["product_id"] == str(PROD)
+    print("  bad id + good name -> recovered by name lookup")
 
     # --- 9. one bad item rejects the whole batch (no partial save) ---
     before = _raw.captured_orders.count_documents({"call_id": "call-mixed"})

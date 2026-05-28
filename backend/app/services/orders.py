@@ -6,6 +6,7 @@ of a completed call. Also handles do-not-call opt-outs.
 
 Kept HTTP-free so it can be unit-tested directly.
 """
+import re
 from datetime import datetime, timezone
 
 from bson import ObjectId
@@ -72,27 +73,34 @@ async def save_order(
         if quantity <= 0:
             return {"ok": False, "error": f"quantity must be positive, got {quantity}"}
 
-        pid_raw = item.get("product_id", "")
-        pid = _to_object_id(str(pid_raw))
-        if pid is None:
-            return {"ok": False, "error": f"invalid product_id: {pid_raw!r}"}
+        pid_raw = str(item.get("product_id", ""))
+        name = (item.get("name") or "").strip()
 
-        parsed.append((pid, {
-            "product_id": str(pid),
-            "name": item.get("name", ""),
+        # Look up by ObjectId first. If that fails (invalid hex, or a hex string
+        # the LLM fabricated at recap time), fall back to an exact name match.
+        # save_order is the last step before the call ends, so swallowing the
+        # whole order over a recoverable id mismatch is a poor trade.
+        pid = _to_object_id(pid_raw)
+        product_doc = None
+        if pid is not None:
+            product_doc = await db.products.find_one({"_id": pid}, {"_id": 1})
+        if product_doc is None and name:
+            product_doc = await db.products.find_one(
+                {"name": {"$regex": f"^{re.escape(name)}$", "$options": "i"}},
+                {"_id": 1},
+            )
+        if product_doc is None:
+            return {
+                "ok": False,
+                "error": f"unknown product: {name or pid_raw!r}",
+            }
+
+        parsed.append((product_doc["_id"], {
+            "product_id": str(product_doc["_id"]),
+            "name": name,
             "quantity": quantity,
             "brand_source": item.get("brand_source", "mentioned"),
         }))
-
-    # One round-trip to confirm every referenced product exists.
-    pids = list({pid for pid, _ in parsed})
-    found = await db.products.find(
-        {"_id": {"$in": pids}}, {"_id": 1}
-    ).to_list(length=len(pids))
-    found_ids = {f["_id"] for f in found}
-    missing = [str(pid) for pid in pids if pid not in found_ids]
-    if missing:
-        return {"ok": False, "error": f"unknown product_id(s): {', '.join(missing)}"}
 
     # Dedupe by product_id with last-write-wins. If the LLM emits both the
     # original and corrected line for one product (Script 9 recap correction
