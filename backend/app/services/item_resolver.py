@@ -203,6 +203,31 @@ def _format_brand_options(brands: list[str]) -> str:
     return f"{', '.join(brands[:-1])}, or {brands[-1]}"
 
 
+def _exact_brand_match(
+    normalized: str,
+    aliases_by_brand: dict[str, set[str]],
+) -> str | None:
+    for known_brand in sorted(aliases_by_brand, key=len, reverse=True):
+        if normalized in _brand_aliases(
+            known_brand,
+            aliases_by_brand[known_brand],
+        ):
+            return known_brand
+    return None
+
+
+def _strip_context_phrases(
+    normalized: str,
+    context_phrases: Iterable[str] | None,
+) -> str:
+    result = normalized
+    for phrase in context_phrases or ():
+        context = _normalize_phrase(phrase)
+        if context:
+            result = _remove_phrase(result, context)
+    return result or normalized
+
+
 _BRAND_FILLERS = frozenset({
     "i", "ill", "would", "want", "wanted", "like", "let", "give",
     "get", "have", "take", "me", "us", "the", "a", "an", "some",
@@ -232,6 +257,7 @@ def _strip_brand_fillers(normalized: str) -> str:
 def _resolve_brand_name(
     brand: str,
     aliases_by_brand: dict[str, set[str]],
+    context_phrases: Iterable[str] | None = None,
 ) -> str | None:
     """Return the stocked brand matching a spoken brand variant.
 
@@ -245,23 +271,22 @@ def _resolve_brand_name(
     if not normalized:
         return None
 
-    for known_brand in sorted(aliases_by_brand, key=len, reverse=True):
-        if normalized in _brand_aliases(
-            known_brand,
-            aliases_by_brand[known_brand],
-        ):
-            return known_brand
+    exact = _exact_brand_match(normalized, aliases_by_brand)
+    if exact is not None:
+        return exact
 
     stripped = _strip_brand_fillers(normalized)
     if stripped and stripped != normalized:
-        for known_brand in sorted(aliases_by_brand, key=len, reverse=True):
-            if stripped in _brand_aliases(
-                known_brand,
-                aliases_by_brand[known_brand],
-            ):
-                return known_brand
+        exact = _exact_brand_match(stripped, aliases_by_brand)
+        if exact is not None:
+            return exact
 
-    fallback = stripped or normalized
+    fallback = _strip_context_phrases(stripped or normalized, context_phrases)
+    if fallback != normalized and fallback != stripped:
+        exact = _exact_brand_match(fallback, aliases_by_brand)
+        if exact is not None:
+            return exact
+
     return (
         _phonetic_match(fallback, aliases_by_brand)
         or _near_miss_match(fallback, aliases_by_brand)
@@ -501,7 +526,11 @@ async def resolve_brand(
 
     candidates = await resolution.search_products(db, subcategory, limit=50)
     aliases_by_brand = _brand_alias_map(candidates)
-    resolved_brand = _resolve_brand_name(brand or "", aliases_by_brand)
+    resolved_brand = _resolve_brand_name(
+        brand or "",
+        aliases_by_brand,
+        context_phrases=(subcategory,),
+    )
 
     for product in candidates:
         if product["brand"] == resolved_brand:
@@ -517,7 +546,11 @@ async def resolve_brand(
     brand_options = await _brand_options(db, subcategory)
 
     catalog_aliases = await _catalog_brand_alias_map(db)
-    catalog_brand = _resolve_brand_name(brand or "", catalog_aliases)
+    catalog_brand = _resolve_brand_name(
+        brand or "",
+        catalog_aliases,
+        context_phrases=(subcategory,),
+    )
     if catalog_brand is not None:
         alternate = await db.products.find_one(
             {"brand": catalog_brand, "in_stock": True},

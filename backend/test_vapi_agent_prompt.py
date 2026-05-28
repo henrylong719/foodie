@@ -23,6 +23,8 @@ def main() -> None:
     assert_contains('call resolve_item("ice cream")')
     assert_contains("Never ask \"Anything else?\" while the queue contains")
     assert_contains("After capturing the final queued item")
+    assert_contains("A queued item mention is not a settled product")
+    assert_contains("If you offered two or more brand options")
     print("Vapi prompt queue handoff guardrails are present.")
 
 

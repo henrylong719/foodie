@@ -164,6 +164,11 @@ async def run():
     assert r["product"]["brand"] == "Peters"
     print(f"  'Perters' ice cream -> {r['status']} (near-miss brand spelling)")
 
+    r = await ir.resolve_brand(db, "Ice Cream", "Peters ice cream")
+    assert r["status"] == RESOLVED, f"expected RESOLVED, got {r['status']}"
+    assert r["product"]["brand"] == "Peters"
+    print(f"  'Peters ice cream' -> {r['status']} (brand answer with item context)")
+
     # --- unresolvable mention -> ASK ---
     r = await ir.resolve_item(db, "xyzzy nonsense", NEW_CUST)
     assert r["status"] == ASK
