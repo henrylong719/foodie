@@ -16,6 +16,7 @@ backend places the outbound call, and Vapi echoes it back here.
 
 import asyncio
 import json
+import logging
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
@@ -27,6 +28,7 @@ from app.services import call_service, item_resolver, orders
 from app.services.event_hub import hub
 
 router = APIRouter(prefix="/calls", tags=["calls"])
+logger = logging.getLogger(__name__)
 
 
 class PlaceCallRequest(BaseModel):
@@ -200,6 +202,43 @@ def _extract_call_id(message: dict) -> str:
     return str(call.get("id") or message.get("callId") or "")
 
 
+def _summarize_tool_result(result: object) -> object:
+    """Keep webhook diagnostics readable while preserving routing clues."""
+    if not isinstance(result, dict):
+        return result
+
+    fields = (
+        "status",
+        "ok",
+        "error",
+        "message",
+        "subcategory",
+        "available_brands",
+        "matched_brand",
+        "alternate_subcategory",
+        "order_id",
+    )
+    summary = {field: result[field] for field in fields if field in result}
+
+    product = result.get("product")
+    if isinstance(product, dict):
+        summary["product"] = {
+            key: product[key]
+            for key in ("_id", "brand", "name")
+            if key in product
+        }
+
+    alternate = result.get("alternate_product")
+    if isinstance(alternate, dict):
+        summary["alternate_product"] = {
+            key: alternate[key]
+            for key in ("_id", "brand", "name", "subcategory")
+            if key in alternate
+        }
+
+    return summary
+
+
 @router.post("/webhook")
 async def vapi_webhook(
     request: Request,
@@ -268,12 +307,26 @@ async def vapi_webhook(
         name, args = _extract_tool_call(
             tool_call, tool_meta.get(str(tool_call.get("id", "")))
         )
+        logger.warning(
+            "Vapi tool call received call_id=%s tool_call_id=%s name=%s args=%s",
+            call_id,
+            tool_call.get("id"),
+            name,
+            args,
+        )
         result = await _dispatch(
             db,
             name,
             args,
             customer_id,
             call_id,
+        )
+        logger.warning(
+            "Vapi tool call result call_id=%s tool_call_id=%s name=%s result=%s",
+            call_id,
+            tool_call.get("id"),
+            name,
+            _summarize_tool_result(result),
         )
         results.append(
             {

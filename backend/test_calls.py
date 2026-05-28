@@ -82,6 +82,26 @@ def _payload(tool_calls, customer_id=str(CUST), call_id="call-123"):
 
 
 async def run():
+    # --- 0a. tool debug summaries preserve the fields needed for diagnosis ---
+    summary = calls._summarize_tool_result({
+        "status": "ask",
+        "subcategory": "Ice Cream",
+        "message": "Sorry, we don't have Peters in ice cream.",
+        "available_brands": ["Streets", "Bulla", "Peters"],
+        "product": {"brand": "Peters", "name": "Peters Classic Ice Cream 500g"},
+    })
+    assert summary == {
+        "status": "ask",
+        "message": "Sorry, we don't have Peters in ice cream.",
+        "subcategory": "Ice Cream",
+        "available_brands": ["Streets", "Bulla", "Peters"],
+        "product": {
+            "brand": "Peters",
+            "name": "Peters Classic Ice Cream 500g",
+        },
+    }
+    print("  tool summary    -> debug fields preserved")
+
     # --- 0. outbound call payload requests live server events from Vapi ---
     payload = vapi_client._build_call_payload(str(CUST), "+61400000000")
     server_messages = payload["assistantOverrides"]["serverMessages"]
