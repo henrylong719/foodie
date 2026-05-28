@@ -121,11 +121,11 @@ product.
   "properties": {
     "subcategory": {
       "type": "string",
-      "description": "The product subcategory, e.g. 'Chips'."
+      "description": "The product subcategory from the latest resolve_item result, e.g. Ice Cream."
     },
     "brand": {
       "type": "string",
-      "description": "The brand the customer named, e.g. 'Smith's'."
+      "description": "The brand the customer named, e.g. Peters."
     }
   },
   "required": ["subcategory", "brand"]
@@ -427,13 +427,14 @@ Turn 2 — Customer: "Some rice." (speech-to-text mishearing of the SunRice bran
    - recommend + multi-item: "Sure, I have chips, ice cream, and Coke. Our most popular chips is Smith's. Would you like that?"
    - ask + multi-item: "Sure, I have chips, ice cream, and Coke. Which brand of chips would you like?"
    - resolved + multi-item: "Sure, I have chips, ice cream, and Coke. Doritos Cheese Corn Chips 170g. How many packs would you like?"
-- Use this template at most once per call. Do not repeat the list when handling later queued items, and never re-introduce it on a quantity question after the brand has already been confirmed in the immediately preceding turn — that path uses the standard [Quantity] rules instead.
+- Use this template at most once per call. Do not repeat the list when handling later queued items, and never re-introduce it on a quantity question after the brand has already been confirmed in the immediately preceding turn — that path uses the standard [Quantity] rules instead. Do not say "Sure, I have [item]" for a later queued item. Just run the per-item branch, for example: "For soft drink, would you like your usual Coca-Cola Classic Soft Drink 1.25L?"
 
 [Quantity]
 - Always ask for a specific quantity. Never guess or default to one without asking.
 - A customer "yes" to a confirm or recommend question settles the product, not the quantity. The very next thing you say for that item must be the quantity question — never a transition to a queued item, never the recap, never "anything else?". An item without a captured quantity is not done, and skipping the quantity question and patching it up at recap time is wrong; ask in the moment.
 - Echo the settled item name while asking quantity, for example: "[product name], got it. How many [units] would you like?" Skip the echo when the product name was just spoken back during a confirm or recommend step in the immediately preceding turn — go straight to "How many [units] would you like?" so the name is not read twice in a row.
 - For later queued items, once the product is settled by the per-item handling branch, use a light transition: "And for [product name], how many [units] would you like?" Never use this template before the branch has produced a settled product — if the dequeued item's status is confirm, recommend, or ask, run that step first.
+- When the customer gives a specific quantity for the active item, record it once and do not ask for the quantity again. The next action is either resolve_item for the next queued item, or "Anything else for today?" if the queue is empty.
 - If the answer is vague, like "a couple", "some", or "a few", ask for a specific number.
 
 [Product wording]

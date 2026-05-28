@@ -194,6 +194,30 @@ async def run():
     calls.hub.unsubscribe("call-DNC", dnc_listener)
     print("  DNC tool annotation  -> published live")
 
+    # --- webhook: end-of-call artifact must not replay transcript over SSE ---
+    # Live transcript lines already arrive via transcript webhooks. Replaying
+    # the final artifact over the same hub makes the dashboard show the whole
+    # conversation twice.
+    end_listener = calls.hub.subscribe("call-END")
+    body = {
+        "message": {
+            "type": "end-of-call-report",
+            "endedReason": "customer-ended-call",
+            "call": {"id": "call-END"},
+            "artifact": {
+                "messages": [
+                    {"role": "assistant", "message": "Hi there", "time": 0.5},
+                    {"role": "user", "message": "I need chips", "time": 1.0},
+                ]
+            },
+        }
+    }
+    await calls.vapi_webhook(_FakeRequest(body), db=db)
+    await asyncio.sleep(0.05)
+    assert end_listener.empty(), "end-of-call artifact must not duplicate live SSE"
+    calls.hub.unsubscribe("call-END", end_listener)
+    print("  end report relay     -> transcript not replayed")
+
 
 asyncio.run(run())
 print("\nALL EVENT HUB / RELAY CHECKS PASSED")

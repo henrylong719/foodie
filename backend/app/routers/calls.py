@@ -284,11 +284,7 @@ async def vapi_webhook(
                 "status": "ended",
                 "endedReason": message.get("endedReason"),
             }
-            update = await call_service.update_call_from_provider(
-                db, call_id, provider_call
-            )
-            for line in update.get("transcript", []):
-                await hub.publish(call_id, line)
+            await call_service.update_call_from_provider(db, call_id, provider_call)
         return {"received": True}
 
     # Only tool-calls need a meaningful reply; acknowledge anything else.
