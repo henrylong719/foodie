@@ -64,6 +64,17 @@ def _build_call_payload(customer_id: str, phone_number: str) -> dict[str, Any]:
     assistant_overrides: dict[str, Any] = {
         "metadata": metadata,
         "serverMessages": SERVER_MESSAGES,
+        # LLM-based endpointing with a conservative wait function: an acoustic
+        # VAD treats "I need chips." as a complete turn even when the customer
+        # is mid-list. LiveKit's default sigmoid leans short, so we raise the
+        # max wait (3500ms) and shift the threshold (0.6) to wait longer when
+        # the model is uncertain whether the user has truly finished.
+        "startSpeakingPlan": {
+            "smartEndpointingPlan": {
+                "provider": "livekit",
+                "waitFunction": "3500 / (1 + exp(-10 * (x - 0.6)))",
+            },
+        },
     }
     if settings.vapi_webhook_url:
         assistant_overrides["server"] = {"url": settings.vapi_webhook_url}
