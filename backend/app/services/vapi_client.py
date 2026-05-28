@@ -67,12 +67,15 @@ def _build_call_payload(customer_id: str, phone_number: str) -> dict[str, Any]:
         # LLM-based endpointing with a conservative wait function: an acoustic
         # VAD treats "I need chips." as a complete turn even when the customer
         # is mid-list. LiveKit's default sigmoid leans short, so we raise the
-        # max wait (3500ms) and shift the threshold (0.6) to wait longer when
-        # the model is uncertain whether the user has truly finished.
+        # max wait (5000ms) and shift the threshold (0.7) to wait longer when
+        # the model is uncertain whether the user has truly finished — this
+        # gives short successive mentions like "chips. Maybe ice. Coke." a
+        # chance to merge into one turn, where the prompt's one-tool-per-turn
+        # rule actually holds.
         "startSpeakingPlan": {
             "smartEndpointingPlan": {
                 "provider": "livekit",
-                "waitFunction": "3500 / (1 + exp(-10 * (x - 0.6)))",
+                "waitFunction": "5000 / (1 + exp(-10 * (x - 0.7)))",
             },
         },
     }
