@@ -229,7 +229,9 @@ async def resolve_item(
                     "subcategory": subcategory,
                     "brand_source": "mentioned",
                     "product": product,
-                    "message": f"Got it — {product['name']}.",
+                    "message": (
+                        f"Got it — {_natural_item_name(product['brand'], subcategory)}."
+                    ),
                 }
         # brand named but not available (or all OOS) — continue to fallback
 
@@ -343,7 +345,9 @@ async def resolve_brand(
                 "subcategory": subcategory,
                 "brand_source": "mentioned",
                 "product": product,
-                "message": f"Got it — {product['name']}.",
+                "message": (
+                    f"Got it — {_natural_item_name(product['brand'], subcategory)}."
+                ),
             }
     brand_options = await _brand_options(db, subcategory)
 
