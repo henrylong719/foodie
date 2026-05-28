@@ -71,6 +71,16 @@ Resolve one spoken item to a concrete decision.
 }
 ```
 
+**Messages (request-start filler):** in the tool's Messages panel, add a `request-start` entry so the caller hears something during the LLM-→-backend-→-LLM round trip instead of silence. Vapi plays this the instant the tool is invoked.
+
+```json
+[
+  {
+    "type": "request-start",
+    "content": "Let me check that for you."
+  }
+]
+```
 
 
 
@@ -117,6 +127,16 @@ product.
 }
 ```
 
+**Messages (request-start filler):**
+
+```json
+[
+  {
+    "type": "request-start",
+    "content": "One sec."
+  }
+]
+```
 
 
 
@@ -162,6 +182,17 @@ Persist the confirmed order. Called once, after the end recap is approved.
   },
   "required": ["items"]
 }
+```
+
+**Messages (request-start filler):**
+
+```json
+[
+  {
+    "type": "request-start",
+    "content": "Saving your order now."
+  }
+]
 ```
 
 
