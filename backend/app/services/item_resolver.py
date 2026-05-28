@@ -18,6 +18,7 @@ Decision tree:
 """
 
 import re
+from collections.abc import Iterable
 
 from metaphone import doublemetaphone
 from motor.motor_asyncio import AsyncIOMotorDatabase
@@ -95,6 +96,56 @@ def _phonetic_match(
         brand_codes = {code for code in doublemetaphone(brand_compact) if code}
         if spoken_codes & brand_codes:
             matches.add(known_brand)
+
+    if len(matches) == 1:
+        return next(iter(matches))
+    return None
+
+
+def _one_edit_apart(a: str, b: str) -> bool:
+    """True when compact words differ by one typo-sized edit."""
+    if a == b:
+        return True
+    if abs(len(a) - len(b)) > 1:
+        return False
+
+    if len(a) > len(b):
+        a, b = b, a
+
+    edits = 0
+    i = j = 0
+    while i < len(a) and j < len(b):
+        if a[i] == b[j]:
+            i += 1
+            j += 1
+            continue
+        edits += 1
+        if edits > 1:
+            return False
+        if len(a) == len(b):
+            i += 1
+        j += 1
+
+    return True
+
+
+def _near_miss_match(
+    spoken: str,
+    aliases_by_brand: dict[str, set[str]],
+) -> str | None:
+    """Resolve a single-character STT typo when it points to one brand only."""
+    compact = spoken.replace(" ", "")
+    if len(compact) < 5:
+        return None
+
+    matches: set[str] = set()
+    for known_brand, configured_aliases in aliases_by_brand.items():
+        aliases: Iterable[str] = _brand_aliases(known_brand, configured_aliases)
+        for alias in aliases:
+            alias_compact = alias.replace(" ", "")
+            if len(alias_compact) >= 5 and _one_edit_apart(compact, alias_compact):
+                matches.add(known_brand)
+                break
 
     if len(matches) == 1:
         return next(iter(matches))
@@ -210,7 +261,11 @@ def _resolve_brand_name(
             ):
                 return known_brand
 
-    return _phonetic_match(stripped or normalized, aliases_by_brand)
+    fallback = stripped or normalized
+    return (
+        _phonetic_match(fallback, aliases_by_brand)
+        or _near_miss_match(fallback, aliases_by_brand)
+    )
 
 
 def _strip_brands(

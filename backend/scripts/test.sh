@@ -20,6 +20,7 @@ tests=(
   test_event_hub.py
   test_sse_e2e.py
   test_compliance.py
+  test_vapi_agent_prompt.py
 )
 
 for test_file in "${tests[@]}"; do

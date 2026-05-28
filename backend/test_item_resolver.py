@@ -150,6 +150,20 @@ async def run():
     assert r["product"]["brand"] == "Pauls"
     print(f"  'Pauls' milk     -> {r['status']} (brand answer resolved)")
 
+    # --- Brand answer with a near-miss STT spelling should still resolve ---
+    peters = ObjectId()
+    _raw.products.insert_one(
+        {"_id": peters, "name": "Peters Classic Ice Cream 2L",
+         "brand": "Peters", "category": "Frozen", "subcategory": "Ice Cream",
+         "brand_aliases": [], "aliases": ["ice cream", "icecream"],
+         "size": "2L", "unit": "tub", "price": 8.0, "in_stock": True,
+         "popularity_score": 55}
+    )
+    r = await ir.resolve_brand(db, "Ice Cream", "Perters")
+    assert r["status"] == RESOLVED, f"expected RESOLVED, got {r['status']}"
+    assert r["product"]["brand"] == "Peters"
+    print(f"  'Perters' ice cream -> {r['status']} (near-miss brand spelling)")
+
     # --- unresolvable mention -> ASK ---
     r = await ir.resolve_item(db, "xyzzy nonsense", NEW_CUST)
     assert r["status"] == ASK
