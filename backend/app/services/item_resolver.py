@@ -152,6 +152,32 @@ def _format_brand_options(brands: list[str]) -> str:
     return f"{', '.join(brands[:-1])}, or {brands[-1]}"
 
 
+_BRAND_FILLERS = frozenset({
+    "i", "ill", "would", "want", "wanted", "like", "let", "give",
+    "get", "have", "take", "me", "us", "the", "a", "an", "some",
+    "any", "maybe", "perhaps", "please", "thanks", "thank", "you",
+    "one", "ok", "okay", "sure", "yes", "no", "just", "actually",
+    "think", "guess", "try", "prefer", "pick", "choose",
+})
+
+
+def _strip_brand_fillers(normalized: str) -> str:
+    """Drop leading/trailing politeness markers around a brand utterance.
+
+    The agent should pre-strip these before calling resolve_brand, but it
+    often forgets ("I want Peters", "Peter, please"). Exact alias matching
+    fails on a filler-padded phrase because "peter please" is not a brand
+    alias; stripping turns it into "peter" which matches Peters' singular
+    drift alias. Defense in depth — the prompt rule remains the primary fix.
+    """
+    words = normalized.split()
+    while words and words[0] in _BRAND_FILLERS:
+        words.pop(0)
+    while words and words[-1] in _BRAND_FILLERS:
+        words.pop()
+    return " ".join(words)
+
+
 def _resolve_brand_name(
     brand: str,
     aliases_by_brand: dict[str, set[str]],
@@ -159,8 +185,10 @@ def _resolve_brand_name(
     """Return the stocked brand matching a spoken brand variant.
 
     Exact alias match first (covers normalized spellings, plural drift, and
-    configured aliases). On miss, fall back to Double Metaphone so the agent
-    still resolves homophones the TTS/STT pair tends to mangle.
+    configured aliases). On miss, strip common politeness fillers and retry
+    the exact match — handles "I want Peters" / "Peter, please". Finally,
+    fall back to Double Metaphone so the agent still resolves homophones
+    the TTS/STT pair tends to mangle.
     """
     normalized = _normalize_phrase(brand)
     if not normalized:
@@ -173,7 +201,16 @@ def _resolve_brand_name(
         ):
             return known_brand
 
-    return _phonetic_match(normalized, aliases_by_brand)
+    stripped = _strip_brand_fillers(normalized)
+    if stripped and stripped != normalized:
+        for known_brand in sorted(aliases_by_brand, key=len, reverse=True):
+            if stripped in _brand_aliases(
+                known_brand,
+                aliases_by_brand[known_brand],
+            ):
+                return known_brand
+
+    return _phonetic_match(stripped or normalized, aliases_by_brand)
 
 
 def _strip_brands(
@@ -382,7 +419,20 @@ async def resolve_brand(
     # hallucinate (e.g. "Cookies" for "Biscuits"). Without this check,
     # search_products would fall back to $text and return unrelated hits,
     # producing a brand list that has nothing to do with what was asked.
-    if not subcategory or not await db.products.find_one({"subcategory": subcategory}):
+    # Match case-insensitively: the agent often lowercases subcategories
+    # for natural speech ("ice cream") while the canonical stored form is
+    # capitalized ("Ice Cream"). Replace with the canonical form so any
+    # downstream comparisons (brand-alias lookup keyed by candidates from
+    # this subcategory) succeed.
+    canonical_doc = (
+        await db.products.find_one(
+            {"subcategory": {"$regex": f"^{re.escape(subcategory)}$", "$options": "i"}},
+            {"subcategory": 1},
+        )
+        if subcategory
+        else None
+    )
+    if not subcategory or canonical_doc is None:
         return {
             "status": ASK,
             "subcategory": subcategory,
@@ -392,6 +442,7 @@ async def resolve_brand(
                 f"could you tell me what you'd like instead?"
             ),
         }
+    subcategory = canonical_doc["subcategory"]
 
     candidates = await resolution.search_products(db, subcategory, limit=50)
     aliases_by_brand = _brand_alias_map(candidates)
