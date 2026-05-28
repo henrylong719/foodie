@@ -37,14 +37,28 @@ DEMO_CUSTOMER_PHONE = "+12176373205"
 CATEGORIES = {
     "Snacks": {
         "subcategories": {
-            "Chips": ["chips", "crisps", "potato chips", "corn chips", "tortilla chips", "hot chips"],
+            "Chips": [
+                "chips",
+                "crisps",
+                "potato chips",
+                "corn chips",
+                "tortilla chips",
+                "hot chips",
+            ],
             "Crackers": ["crackers", "savoury biscuits", "water crackers"],
             "Chocolate": ["chocolate", "choccy", "chocolate bar", "block chocolate"],
             "Nuts": ["nuts", "mixed nuts", "snack nuts", "salted nuts"],
             "Popcorn": ["popcorn", "popping corn"],
             "Muesli Bars": ["muesli bars", "snack bars", "lunch box bars"],
         },
-        "brands": ["Smith's", "Doritos", "Arnott's", "Cadbury", "Nobby's", "The Natural Confectionery Co"],
+        "brands": [
+            "Smith's",
+            "Doritos",
+            "Arnott's",
+            "Cadbury",
+            "Nobby's",
+            "The Natural Confectionery Co",
+        ],
         "subcategory_brands": {
             "Chips": ["Smith's", "Doritos", "Nobby's"],
         },
@@ -54,8 +68,14 @@ CATEGORIES = {
     "Beverages": {
         "subcategories": {
             "Soft Drink": [
-                "soft drink", "soda", "fizzy drink", "pop", "coke", "cola",
-                "coca cola", "coca-cola",
+                "soft drink",
+                "soda",
+                "fizzy drink",
+                "pop",
+                "coke",
+                "cola",
+                "coca cola",
+                "coca-cola",
             ],
             "Juice": ["juice", "fruit juice", "orange juice", "apple juice"],
             "Water": ["water", "bottled water", "spring water", "sparkling water"],
@@ -63,7 +83,15 @@ CATEGORIES = {
             "Tea": ["tea", "tea bags", "black tea", "green tea"],
             "Energy Drink": ["energy drink", "energy", "sports drink"],
         },
-        "brands": ["Coca-Cola", "Schweppes", "Golden Circle", "Mount Franklin", "Nescafe", "Lipton", "Red Bull"],
+        "brands": [
+            "Coca-Cola",
+            "Schweppes",
+            "Golden Circle",
+            "Mount Franklin",
+            "Nescafe",
+            "Lipton",
+            "Red Bull",
+        ],
         "subcategory_brands": {
             "Soft Drink": ["Coca-Cola", "Schweppes"],
             "Juice": ["Golden Circle"],
@@ -84,7 +112,14 @@ CATEGORIES = {
             "Cream": ["cream", "thickened cream", "pouring cream"],
             "Eggs": ["eggs", "free range eggs", "dozen eggs"],
         },
-        "brands": ["Pauls", "Bega", "Dairy Farmers", "Western Star", "Chobani", "Devondale"],
+        "brands": [
+            "Pauls",
+            "Bega",
+            "Dairy Farmers",
+            "Western Star",
+            "Chobani",
+            "Devondale",
+        ],
         "units": ["bottle", "block", "tub", "carton"],
         "sizes": ["250g", "500g", "600ml", "1L", "2L"],
     },
@@ -94,11 +129,24 @@ CATEGORIES = {
             "Pasta": ["pasta", "spaghetti", "penne", "macaroni"],
             "Rice": ["rice", "white rice", "basmati", "jasmine rice"],
             "Cereal": ["cereal", "breakfast cereal", "muesli", "corn flakes"],
-            "Canned Goods": ["canned food", "tinned food", "canned beans", "tinned tomatoes"],
+            "Canned Goods": [
+                "canned food",
+                "tinned food",
+                "canned beans",
+                "tinned tomatoes",
+            ],
             "Cooking Oil": ["oil", "cooking oil", "olive oil", "vegetable oil"],
             "Flour & Sugar": ["flour", "sugar", "baking", "plain flour"],
         },
-        "brands": ["Heinz", "Leggo's", "San Remo", "SunRice", "Kellogg's", "Moccona", "Bertolli"],
+        "brands": [
+            "Heinz",
+            "Leggo's",
+            "San Remo",
+            "SunRice",
+            "Kellogg's",
+            "Moccona",
+            "Bertolli",
+        ],
         "units": ["bottle", "packet", "box", "can"],
         "sizes": ["250g", "375g", "500g", "750g", "1kg"],
     },
@@ -130,7 +178,14 @@ CATEGORIES = {
             "Cleaning Spray": ["cleaning spray", "surface spray", "cleaner"],
             "Bin Bags": ["bin bags", "garbage bags", "rubbish bags"],
         },
-        "brands": ["Morning Fresh", "Quilton", "OMO", "Cuddly", "Sorbent", "Spray n' Wipe"],
+        "brands": [
+            "Morning Fresh",
+            "Quilton",
+            "OMO",
+            "Cuddly",
+            "Sorbent",
+            "Spray n' Wipe",
+        ],
         "units": ["bottle", "packet", "roll"],
         "sizes": ["500ml", "1L", "6 pack", "8 pack", "12 pack"],
     },
@@ -210,24 +265,29 @@ CATEGORIES = {
 }
 
 DESCRIPTORS = [
-    "Original", "Classic", "Light", "Extra", "Family Size", "Value",
-    "Premium", "Reduced Fat", "No Added Sugar", "Twin Pack",
+    "Original",
+    "Classic",
+    "Light",
+    "Extra",
+    "Family Size",
+    "Value",
+    "Premium",
+    "Reduced Fat",
+    "No Added Sugar",
+    "Twin Pack",
 ]
 
+# Manual brand aliases — only for cases the resolver's auto-normalization and
+# phonetic fallback can't derive on their own. The resolver already handles:
+#   - apostrophes / hyphens / case             (Arnott's, Coca-Cola, Smith's)
+#   - punctuation removed AND replaced w/ space (cocacola AND coca cola)
+#   - singular form drift                       (Peter ↔ Peters)
+#   - phonetic homophones                       (Sunrise ≈ SunRice)
+# So entries here should only cover *unpredictable* substitutions — typically
+# abbreviations (a short nickname) or word expansions (n' → and).
 BRAND_ALIASES = {
-    "Arnott's": ["arnotts"],
     "Bakers Delight": ["bakers"],
-    "Butcher's Pride": ["butchers pride"],
-    "Coca-Cola": ["coca cola", "coca-cola"],
-    "Farmer's Choice": ["farmers choice"],
-    "Helga's": ["helgas"],
-    "Kellogg's": ["kelloggs"],
-    "Leggo's": ["leggos"],
-    "Nobby's": ["nobbys"],
-    "Rafferty's Garden": ["raffertys garden"],
-    "Red Bull": ["redbull"],
-    "Smith's": ["smiths"],
-    "Spray n' Wipe": ["spray n wipe", "spray and wipe"],
+    "Spray n' Wipe": ["spray and wipe"],
 }
 
 DEMO_PRODUCT_SPECS = [
@@ -336,7 +396,9 @@ def generate_products(n=NUM_PRODUCTS):
         sum(
             len(_brands_for_subcategory(spec, subcat))
             for subcat in spec["subcategories"]
-        ) * len(spec["sizes"]) * len(DESCRIPTORS)
+        )
+        * len(spec["sizes"])
+        * len(DESCRIPTORS)
         for spec in CATEGORIES.values()
     )
     if n > cap:
@@ -358,24 +420,26 @@ def generate_products(n=NUM_PRODUCTS):
 
         key = (brand, descriptor, subcat, size)
         if key in seen:
-            continue                       # duplicate combination, skip
+            continue  # duplicate combination, skip
         seen.add(key)
 
-        products.append({
-            "name": _product_name(brand, descriptor, subcat, size),
-            "brand": brand,
-            "brand_aliases": _brand_aliases_for_brand(brand),
-            "category": cat,
-            "subcategory": subcat,
-            "aliases": spec["subcategories"][subcat],
-            "size": size,
-            "unit": random.choice(spec["units"]),
-            "price": round(random.uniform(1.5, 24.0), 2),
-            "in_stock": random.random() > 0.05,
-            # placeholder — overwritten by compute_popularity() from real
-            # order history once orders exist. See seed().
-            "popularity_score": 0,
-        })
+        products.append(
+            {
+                "name": _product_name(brand, descriptor, subcat, size),
+                "brand": brand,
+                "brand_aliases": _brand_aliases_for_brand(brand),
+                "category": cat,
+                "subcategory": subcat,
+                "aliases": spec["subcategories"][subcat],
+                "size": size,
+                "unit": random.choice(spec["units"]),
+                "price": round(random.uniform(1.5, 24.0), 2),
+                "in_stock": random.random() > 0.05,
+                # placeholder — overwritten by compute_popularity() from real
+                # order history once orders exist. See seed().
+                "popularity_score": 0,
+            }
+        )
     return ensure_demo_products(products)
 
 
@@ -397,6 +461,7 @@ def _demo_customer():
 def generate_customers(n=NUM_CUSTOMERS):
     """Build n customer documents with consent records."""
     from faker import Faker
+
     fake = Faker("en_AU")
     customers = []
     phones = set()
@@ -406,22 +471,26 @@ def generate_customers(n=NUM_CUSTOMERS):
         phones.add(demo_customer["phone"])
     methods = ["in-store signup", "loyalty card registration", "online account"]
     while len(customers) < n:
-        consent_date = datetime.now(timezone.utc) - timedelta(days=random.randint(30, 900))
+        consent_date = datetime.now(timezone.utc) - timedelta(
+            days=random.randint(30, 900)
+        )
         phone = "+614" + "".join(str(random.randint(0, 9)) for _ in range(8))
         if phone in phones:
             continue
         phones.add(phone)
-        customers.append({
-            "name": fake.name(),
-            "phone": phone,
-            "do_not_call": random.random() < 0.06,   # a few opted out
-            "consent": {
-                "given": True,
-                "date": consent_date,
-                "method": random.choice(methods),
-            },
-            "preferred_language": "en",
-        })
+        customers.append(
+            {
+                "name": fake.name(),
+                "phone": phone,
+                "do_not_call": random.random() < 0.06,  # a few opted out
+                "consent": {
+                    "given": True,
+                    "date": consent_date,
+                    "method": random.choice(methods),
+                },
+                "preferred_language": "en",
+            }
+        )
     return customers
 
 
@@ -477,21 +546,28 @@ def generate_order_history(customers, products):
     brand-inference can filter at the right grain ("chips", not "snacks")."""
     history = []
     for customer in customers:
-        for _ in range(random.randint(1, 6)):       # 1-6 past orders each
-            order_date = datetime.now(timezone.utc) - timedelta(days=random.randint(1, 365))
+        for _ in range(random.randint(1, 6)):  # 1-6 past orders each
+            order_date = datetime.now(timezone.utc) - timedelta(
+                days=random.randint(1, 365)
+            )
             chosen = random.sample(products, random.randint(1, 5))
-            items = [{
-                "product_id": p["_id"],
-                "name": p["name"],
-                "category": p["category"],
-                "subcategory": p["subcategory"],
-                "quantity": random.randint(1, 4),
-            } for p in chosen]
-            history.append({
-                "customer_id": customer["_id"],
-                "date": order_date,
-                "items": items,
-            })
+            items = [
+                {
+                    "product_id": p["_id"],
+                    "name": p["name"],
+                    "category": p["category"],
+                    "subcategory": p["subcategory"],
+                    "quantity": random.randint(1, 4),
+                }
+                for p in chosen
+            ]
+            history.append(
+                {
+                    "customer_id": customer["_id"],
+                    "date": order_date,
+                    "items": items,
+                }
+            )
     demo_customer = next(
         (c for c in customers if c.get("phone") == DEMO_CUSTOMER_PHONE),
         None,
@@ -547,8 +623,7 @@ def compute_brand_popularity(history, products):
         { category, subcategory, brand, score, buyer_count }.
     """
     # product_id -> (category, subcategory, brand) lookup
-    info = {p["_id"]: (p["category"], p["subcategory"], p["brand"])
-            for p in products}
+    info = {p["_id"]: (p["category"], p["subcategory"], p["brand"]) for p in products}
 
     # (subcategory, brand) -> set of customer_ids; remember category too
     buyers: dict = {}
@@ -573,25 +648,35 @@ def compute_brand_popularity(history, products):
     for (subcategory, brand), custs in buyers.items():
         count = len(custs)
         top = top_in_subcat[subcategory]
-        docs.append({
-            "category": cat_of[(subcategory, brand)],
-            "subcategory": subcategory,
-            "brand": brand,
-            "score": max(1, round(count / top * 100)),
-            "buyer_count": count,
-        })
+        docs.append(
+            {
+                "category": cat_of[(subcategory, brand)],
+                "subcategory": subcategory,
+                "brand": brand,
+                "score": max(1, round(count / top * 100)),
+                "buyer_count": count,
+            }
+        )
     return docs
 
 
 def create_indexes(db):
     """Indexes that the search and history-lookup endpoints depend on."""
-    db.products.create_index([
-        ("name", TEXT), ("aliases", TEXT), ("brand_aliases", TEXT),
-        ("category", TEXT), ("subcategory", TEXT),
-    ], name="product_text_search")
+    db.products.create_index(
+        [
+            ("name", TEXT),
+            ("aliases", TEXT),
+            ("brand_aliases", TEXT),
+            ("category", TEXT),
+            ("subcategory", TEXT),
+        ],
+        name="product_text_search",
+    )
     db.products.create_index([("category", ASCENDING), ("popularity_score", ASCENDING)])
     db.customers.create_index([("phone", ASCENDING)], unique=True)
-    db.order_history.create_index([("customer_id", ASCENDING), ("items.subcategory", ASCENDING)])
+    db.order_history.create_index(
+        [("customer_id", ASCENDING), ("items.subcategory", ASCENDING)]
+    )
     db.brand_popularity.create_index([("subcategory", ASCENDING), ("score", ASCENDING)])
     db.captured_orders.create_index([("customer_id", ASCENDING)])
     db.captured_orders.create_index([("created_at", ASCENDING)])
@@ -603,12 +688,17 @@ def create_indexes(db):
 def seed(db):
     """Wipe and reseed all collections. Returns a summary dict."""
     print("WARNING: wiping existing collections in", db.name)
-    for coll in ("products", "customers", "order_history",
-                 "captured_orders", "brand_popularity"):
+    for coll in (
+        "products",
+        "customers",
+        "order_history",
+        "captured_orders",
+        "brand_popularity",
+    ):
         db[coll].drop()
 
     products = generate_products()
-    db.products.insert_many(products)        # insert_many sets _id in place
+    db.products.insert_many(products)  # insert_many sets _id in place
 
     customers = generate_customers()
     db.customers.insert_many(customers)
@@ -648,7 +738,9 @@ def seed(db):
 def main():
     uri = os.environ.get("MONGODB_URI")
     if not uri:
-        sys.exit("ERROR: set the MONGODB_URI environment variable to your Atlas connection string.")
+        sys.exit(
+            "ERROR: set the MONGODB_URI environment variable to your Atlas connection string."
+        )
     client = MongoClient(uri)
     try:
         client.admin.command("ping")

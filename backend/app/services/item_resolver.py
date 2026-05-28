@@ -19,6 +19,7 @@ Decision tree:
 
 import re
 
+from metaphone import doublemetaphone
 from motor.motor_asyncio import AsyncIOMotorDatabase
 
 from app.services import customer_history, resolution
@@ -39,13 +40,65 @@ def _brand_aliases(
     brand: str,
     configured_aliases: set[str] | None = None,
 ) -> set[str]:
-    normalized = _normalize_phrase(brand)
-    aliases = {normalized, normalized.replace(" ", "")}
-    for alias in configured_aliases or set():
-        normalized_alias = _normalize_phrase(alias)
-        aliases.add(normalized_alias)
-        aliases.add(normalized_alias.replace(" ", ""))
+    """Generate matchable forms of a brand name.
+
+    Auto-derives variants the customer is likely to say: punctuation removed
+    entirely ("arnotts"), punctuation as space ("arnott s"), singular form
+    ("peter" for a brand "Peters"). This covers apostrophe-s contractions,
+    hyphens, and singular/plural drift without needing dictionary entries.
+    Configured aliases are only needed for genuinely unpredictable cases
+    (word expansions like "spray and wipe" for "Spray n' Wipe").
+    """
+    aliases: set[str] = set()
+    sources = {brand}
+    if configured_aliases:
+        sources.update(configured_aliases)
+
+    for raw in sources:
+        if not raw:
+            continue
+        lowered = raw.lower()
+        spaced = " ".join(re.sub(r"[^a-z0-9]+", " ", lowered).split())
+        joined = re.sub(r"[^a-z0-9]+", "", lowered)
+        aliases.add(spaced)
+        aliases.add(joined)
+
+        # Singular form: "Peters" → "peter", "Smiths" → "smith". Skip very
+        # short brands where stripping an 's' would mangle the name.
+        if len(joined) > 2 and spaced.endswith("s"):
+            aliases.add(spaced[:-1].rstrip())
+            aliases.add(joined[:-1])
+
     return {alias for alias in aliases if alias}
+
+
+def _phonetic_match(
+    spoken: str,
+    aliases_by_brand: dict[str, set[str]],
+) -> str | None:
+    """Find a brand whose Double Metaphone code matches the customer's input.
+
+    Used as a fallback when exact alias matching fails. Catches homophones
+    the agent's TTS or the customer's STT will mangle ("Sunrise" ≈ "SunRice",
+    "Coca Cola" ≈ "Koka Kola"). Returns a match only when exactly one brand
+    in scope matches phonetically — ambiguous matches return None so the
+    caller asks the customer to clarify rather than confidently picking wrong.
+    """
+    compact = spoken.replace(" ", "")
+    spoken_codes = {code for code in doublemetaphone(compact) if code}
+    if not spoken_codes:
+        return None
+
+    matches: set[str] = set()
+    for known_brand in aliases_by_brand:
+        brand_compact = _normalize_phrase(known_brand).replace(" ", "")
+        brand_codes = {code for code in doublemetaphone(brand_compact) if code}
+        if spoken_codes & brand_codes:
+            matches.add(known_brand)
+
+    if len(matches) == 1:
+        return next(iter(matches))
+    return None
 
 
 def _brand_alias_map(products: list[dict]) -> dict[str, set[str]]:
@@ -103,7 +156,12 @@ def _resolve_brand_name(
     brand: str,
     aliases_by_brand: dict[str, set[str]],
 ) -> str | None:
-    """Return the stocked brand matching a spoken brand variant."""
+    """Return the stocked brand matching a spoken brand variant.
+
+    Exact alias match first (covers normalized spellings, plural drift, and
+    configured aliases). On miss, fall back to Double Metaphone so the agent
+    still resolves homophones the TTS/STT pair tends to mangle.
+    """
     normalized = _normalize_phrase(brand)
     if not normalized:
         return None
@@ -114,7 +172,8 @@ def _resolve_brand_name(
             aliases_by_brand[known_brand],
         ):
             return known_brand
-    return None
+
+    return _phonetic_match(normalized, aliases_by_brand)
 
 
 def _strip_brands(
