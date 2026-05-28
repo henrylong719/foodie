@@ -72,12 +72,12 @@ def _build_call_payload(customer_id: str, phone_number: str) -> dict[str, Any]:
         # gives short successive mentions like "chips. Maybe ice. Coke." a
         # chance to merge into one turn, where the prompt's one-tool-per-turn
         # rule actually holds.
-        "startSpeakingPlan": {
-            "smartEndpointingPlan": {
-                "provider": "livekit",
-                "waitFunction": "5000 / (1 + exp(-10 * (x - 0.7)))",
-            },
-        },
+        # "startSpeakingPlan": {
+        #     "smartEndpointingPlan": {
+        #         "provider": "livekit",
+        #         "waitFunction": "5000 / (1 + exp(-10 * (x - 0.7)))",
+        #     },
+        # },
     }
     if settings.vapi_webhook_url:
         assistant_overrides["server"] = {"url": settings.vapi_webhook_url}
@@ -236,7 +236,11 @@ def extract_recording_url(call: dict[str, Any]) -> str | None:
     if isinstance(stereo, str) and stereo:
         return stereo
 
-    mono = artifact.get("recordingUrl") or recording_dict.get("url") or recording_dict.get("monoUrl")
+    mono = (
+        artifact.get("recordingUrl")
+        or recording_dict.get("url")
+        or recording_dict.get("monoUrl")
+    )
     if isinstance(mono, str) and mono:
         return mono
 
